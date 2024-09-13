@@ -8,6 +8,10 @@ import "core:c"
 
 import rl "vendor:raylib"
 
+import "src:Pool_Array"
+
+Window_Id :: Pool_Array.Id;
+
 App :: struct{
     gpa: mem.Allocator, // General Purpose Allocator
     fa:  mem.Allocator, // Frame Allocator
@@ -26,7 +30,8 @@ App :: struct{
     },
 
     ui: struct{
-        
+        windows: Pool_Array.Pool_Array(Window),
+        active_window: Window_Id,
     },
 
     // Do not touch
@@ -42,7 +47,26 @@ init :: proc(app: ^App){
     mem.arena_init(&app.arena, buffer);
     app.fa = mem.arena_allocator(&app.arena);
 
+    app.ui.windows = Pool_Array.create(Window, app.gpa);
+    app.ui.active_window = Pool_Array.Null_Id;
+
     init_settings(&app.settings, app);
+}
+
+update :: proc(app: ^App){
+    update_key_binds(app);
+
+    ui := &app.ui;
+    window, ok := Pool_Array.get(ui.windows, ui.active_window);
+    if ok {
+        do_window(window, app);
+    } else {
+        show_default_screen(app);
+    }
+}
+
+show_default_screen :: proc(app: ^App){
+    rl.DrawText("Maditor is a simple editor for the mentally deranged\nPress : for typing commands.", 0, 0, 20, rl.WHITE);
 }
 
 update_key_binds :: proc(app: ^App){

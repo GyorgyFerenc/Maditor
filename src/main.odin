@@ -28,18 +28,15 @@ main :: proc(){
         app.delta_duration = time.diff(start, end);
         app.delta = cast(f32) time.duration_milliseconds(app.delta_duration);
         start = end;
-
         free_all(app.fa);
-        update_key_binds(&app);
-
-        if match_key_bind(&app, {Key{ key = .A}, Key{ key = .B}}) {
-            fmt.println("matched ab");
-        }
 
         if rl.WindowShouldClose() do app.running = false;
 
         rl.BeginDrawing();
             rl.ClearBackground(rl.BLACK);
+            
+            update(&app);
+
         rl.EndDrawing();
     }
 }
