@@ -10,7 +10,6 @@ import rl "vendor:raylib"
 
 import "src:Pool_Array"
 
-Window_Id :: Pool_Array.Id;
 
 App :: struct{
     gpa: mem.Allocator, // General Purpose Allocator
@@ -27,11 +26,15 @@ App :: struct{
         buffer: [50]Key,
         current_wait: f32,
         max_wait: f32,
+
+        discard_rune: bool,
     },
 
     ui: struct{
         windows: Pool_Array.Pool_Array(Window),
         active_window: Window_Id,
+
+        cmd: Command_Line,
     },
 
     // Do not touch
@@ -56,9 +59,14 @@ init :: proc(app: ^App){
 update :: proc(app: ^App){
     update_key_binds(app);
 
+    global_key_binds(app);
+
     ui := &app.ui;
-    window, ok := Pool_Array.get(ui.windows, ui.active_window);
+    window, ok := get_window(app, ui.active_window);
     if ok {
+        window.box.pos = {0, 0};
+        window.box.size = to_v2(app.settings.window.size);
+
         do_window(window, app);
     } else {
         show_default_screen(app);
@@ -67,6 +75,26 @@ update :: proc(app: ^App){
 
 show_default_screen :: proc(app: ^App){
     rl.DrawText("Maditor is a simple editor for the mentally deranged\nPress : for typing commands.", 0, 0, 20, rl.WHITE);
+}
+
+global_key_binds :: proc(app: ^App){
+    
+}
+
+discard_next_rune :: proc(app: ^App){
+    app.key_binds.discard_rune = true;
+}
+
+poll_rune :: proc(app: ^App) -> rune{
+    app.key_binds.len = 0;
+    r := rl.GetCharPressed();
+    if r != 0{
+        if !app.key_binds.discard_rune{
+            return r;
+        }
+        app.key_binds.discard_rune = false;
+    }
+    return 0;
 }
 
 update_key_binds :: proc(app: ^App){

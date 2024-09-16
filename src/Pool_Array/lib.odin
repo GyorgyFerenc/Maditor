@@ -2,6 +2,8 @@ package pool_array
 
 import "core:mem"
 
+// Todo(Ferenc): Add generational id
+
 Id :: distinct int;
 Null_Id :: Id(-1);
 
@@ -28,7 +30,6 @@ create :: proc($T: typeid, allocator: mem.Allocator, len := 1) -> Pool_Array(T){
 destroy :: proc(self: Pool_Array($T)){
     delete(self.array);
 }
-
 
 get :: proc(self: Pool_Array($T), id: Id) -> (T, bool){
     if 0 <= id && cast(int) id < len(self.array) do return self.array[id].el, true;

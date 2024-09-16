@@ -22,6 +22,8 @@ main :: proc(){
     app: App;
     init(&app);
 
+    open_to_text_window("test.temp", &app);
+
     start := time.now();
     for app.running{
         end := time.now();

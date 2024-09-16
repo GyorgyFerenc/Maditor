@@ -2,13 +2,15 @@ package buffer
 
 import "core:mem"
 import "core:fmt"
+import "core:os"
+import s "core:strings"
 import "core:unicode/utf8"
 
 // They remain consistent after inserts and deletes
 Pos_Id :: distinct int; 
 
 Buffer :: struct{
-    file_path: Maybe(string),
+    path: Maybe(string),
     runes:     [dynamic]rune,
     positions: [dynamic]int,
 }
@@ -24,6 +26,45 @@ create :: proc(allocator: mem.Allocator) -> Buffer{
 destroy :: proc(b: Buffer) {
     delete(b.runes);
     delete(b.positions);
+}
+
+load :: proc(path: string, gpa, fa: mem.Allocator) -> (buffer: Buffer, ok: bool){
+    content := read_file(path, gpa, fa) or_return;
+    buffer = create(gpa);
+    buffer.path = path;
+    reserve(&buffer.runes, len(content) / 3 + 1);
+
+    for r in content{
+        append(&buffer.runes, r);
+    }
+
+    return buffer, true;
+
+    read_file :: proc(path: string, gpa, fa: mem.Allocator) -> (content: string, ok: bool){
+        context.allocator = gpa;
+        context.temp_allocator = fa;
+        b := os.read_entire_file(path, fa) or_return;
+        content = cast(string) b;
+        return content, true;
+    }
+}
+
+save :: proc(b: Buffer, fa: mem.Allocator) -> (ok: bool){
+    builder := s.builder_make(fa);
+    
+    it := iter(b);
+    for r in next(&it){
+        s.write_rune(&builder, r);
+    }
+
+    path := b.path.? or_return;
+    return write_file(path, s.to_string(builder), fa);
+
+    write_file :: proc(path: string, str: string, fa: mem.Allocator) -> bool{
+        context.allocator = fa;
+        context.temp_allocator = fa;
+        return os.write_entire_file(path, transmute([]u8) str);
+    }
 }
 
 new_pos :: proc(b: ^Buffer) -> Pos_Id{
@@ -49,52 +90,6 @@ Move_Direction :: enum{
     Down,
     Left,
     Right,
-}
-
-move_pos :: proc(b: ^Buffer, p: Pos_Id, direction: Move_Direction) -> bool{
-    position := get_pos(b^, p);
-
-    switch direction{
-    case .Up:   
-        line_begin := find_line_begin_i(b^, position);
-        pos_from_begin := position - line_begin;
-        if line_begin == 0 do return false;
-        pos := line_begin - 1; 
-        line_begin = find_line_begin_i(b^, pos);
-        line_end  := find_line_end_i(b^, pos);
-        new_position := clamp(line_begin + pos_from_begin, line_begin, line_end);
-        set_pos(b, p, new_position);
-        return true;
-    case .Down: 
-        line_end := find_line_end_i(b^, position);
-        line_begin := find_line_begin_i(b^, position);
-        pos_from_begin := position - line_begin;
-        if line_end >= length(b^) do return false;
-        pos := line_end + 1;
-        line_begin    = find_line_begin_i(b^, pos);
-        line_end      = find_line_end_i(b^, pos);
-        new_position := clamp(line_begin + pos_from_begin, line_begin, line_end);
-        set_pos(b, p, new_position);
-        return true;
-    case .Left: 
-        new_position := position - 1;
-        r := get_rune_i(b^, new_position);
-        if r != 0 && r != '\n'{
-            set_pos(b, p, new_position);
-            return true;
-        }
-        return false;
-    case .Right:
-        new_position := position + 1;
-        r := get_rune_i(b^, new_position);
-        if r != 0 && r != '\n'{
-            set_pos(b, p, new_position);
-            return true;
-        }
-        return false;
-    }
-
-    return false;
 }
 
 find_line_begin :: proc(b: Buffer, p: Pos_Id) -> int{
@@ -163,6 +158,36 @@ insert_rune_i :: proc(b: ^Buffer, pos: int, r: rune){
     inject_at(&b.runes, pos, r);
 }
 
+remove_rune :: proc(b: ^Buffer, p: Pos_Id){
+    remove_rune_i(b, get_pos(b^, p));
+}
+
+remove_rune_i :: proc(b: ^Buffer, pos: int){
+    for &position in b.positions{
+        if position >= pos{
+            position -= 1;
+        }
+    }
+
+    ordered_remove(&b.runes, pos);
+}
+
+remove_rune_left :: proc(b: ^Buffer, p: Pos_Id){
+    remove_rune_left_i(b, get_pos(b^, p));
+}
+
+remove_rune_left_i :: proc(b: ^Buffer, pos: int){
+    for &position in b.positions{
+        if position >= pos{
+            position -= 1;
+        }
+    }
+    if pos > 0{
+        ordered_remove(&b.runes, pos - 1);
+    }
+}
+
+
 insert_string :: proc(b: ^Buffer, p: Pos_Id, str: string){
     //insert_string_i(b, get_pos(b^, p), str);
     for r in str{
@@ -193,16 +218,16 @@ length :: proc(b: Buffer) -> int{
 }
 
 Iter :: struct{
-    b: ^Buffer,
+    b: Buffer,
     pos: int,
 }
 
-iter :: proc(b: ^Buffer) -> Iter{
+iter :: proc(b: Buffer) -> Iter{
     return {b, 0};
 }
 
 next :: proc(it: ^Iter) -> (rune, int, bool){
-    r := get_rune_i(it.b^, it.pos);
+    r := get_rune_i(it.b, it.pos);
     if r == 0{
         return {}, {}, false;
     }
