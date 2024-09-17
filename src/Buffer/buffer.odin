@@ -10,9 +10,10 @@ import "core:unicode/utf8"
 Pos_Id :: distinct int; 
 
 Buffer :: struct{
-    path: Maybe(string),
+    path:      Maybe(string),
     runes:     [dynamic]rune,
     positions: [dynamic]int,
+    dirty:     bool,
 }
 
 create :: proc(allocator: mem.Allocator) -> Buffer{
@@ -49,10 +50,11 @@ load :: proc(path: string, gpa, fa: mem.Allocator) -> (buffer: Buffer, ok: bool)
     }
 }
 
-save :: proc(b: Buffer, fa: mem.Allocator) -> (ok: bool){
+save :: proc(b: ^Buffer, fa: mem.Allocator) -> (ok: bool){
     builder := s.builder_make(fa);
+    b.dirty = false;
     
-    it := iter(b);
+    it := iter(b^);
     for r in next(&it){
         s.write_rune(&builder, r);
     }
@@ -79,6 +81,10 @@ delete_pos :: proc(b: ^Buffer){
 
 set_pos :: proc(b: ^Buffer, p: Pos_Id, value: int){
     b.positions[p] = value;
+}
+
+set_pos_to_pos :: proc(b: ^Buffer, p: Pos_Id, p2: Pos_Id){
+    b.positions[p] = get_pos(b^, p2);
 }
 
 get_pos :: proc(b: Buffer, p: Pos_Id) -> int{
@@ -149,6 +155,8 @@ insert_rune :: proc(b: ^Buffer, p: Pos_Id, r: rune){
 }
 
 insert_rune_i :: proc(b: ^Buffer, pos: int, r: rune){
+    b.dirty = true;
+
     for &position in b.positions{
         if position >= pos{
             position += 1;
@@ -163,6 +171,8 @@ remove_rune :: proc(b: ^Buffer, p: Pos_Id){
 }
 
 remove_rune_i :: proc(b: ^Buffer, pos: int){
+    b.dirty = true;
+
     for &position in b.positions{
         if position >= pos{
             position -= 1;
@@ -172,11 +182,25 @@ remove_rune_i :: proc(b: ^Buffer, pos: int){
     ordered_remove(&b.runes, pos);
 }
 
+remove_range :: proc(b: ^Buffer, p: Pos_Id, len: int){
+    remove_range_i(b, get_pos(b^, p), len);
+}
+
+remove_range_i :: proc(b: ^Buffer, pos, len: int){
+    b.dirty = true;
+
+    for _ in 0..<len{
+        remove_rune_i(b, pos);
+    }
+}
+
 remove_rune_left :: proc(b: ^Buffer, p: Pos_Id){
     remove_rune_left_i(b, get_pos(b^, p));
 }
 
 remove_rune_left_i :: proc(b: ^Buffer, pos: int){
+    b.dirty = true;
+
     if pos > 0{
         for &position in b.positions{
             if position >= pos{
@@ -189,7 +213,6 @@ remove_rune_left_i :: proc(b: ^Buffer, pos: int){
 
 
 insert_string :: proc(b: ^Buffer, p: Pos_Id, str: string){
-    //insert_string_i(b, get_pos(b^, p), str);
     for r in str{
         insert_rune(b, p, r);
     }

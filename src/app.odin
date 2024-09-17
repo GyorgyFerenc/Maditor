@@ -23,6 +23,7 @@ App :: struct{
 
     key_binds: struct{
         len: int,
+        number: int,
         buffer: [50]Key,
         current_wait: f32,
         max_wait: f32,
@@ -54,6 +55,8 @@ init :: proc(app: ^App){
     app.ui.active_window = Pool_Array.Null_Id;
 
     init_settings(&app.settings, app);
+
+    reset_keybinds(app);
 
     init_command_line(&app.ui.cmd, app.gpa);
 }
@@ -110,20 +113,24 @@ update_key_binds :: proc(app: ^App){
 
     if has {
         if key_binds.len >= 50 do return; 
-        key_binds.buffer[key_binds.len] = key;
-        key_binds.len += 1;
+
+        if key.key >= .ZERO && key.key <= .NINE{
+            key_binds.number = key_binds.number * 10 + cast(int) (key.key - .ZERO);
+        } else {
+            key_binds.buffer[key_binds.len] = key;
+            key_binds.len += 1;
+        }
     } else {
         if key_binds.len == 0 do return;
         key_binds.current_wait += app.delta;
     }
 
     if key_binds.current_wait >= key_binds.max_wait{
-        key_binds.current_wait = 0;
-        key_binds.len = 0;
+        reset_keybinds(app);
     }
 }
 
-match_key_bind :: proc(app: ^App, key_bind: Key_Bind) -> bool{
+match_key_bind :: proc(app: ^App, key_bind: Key_Bind, number: ^int = nil) -> bool{
     if len(key_bind) != app.key_binds.len {
         return false;
     }
@@ -131,13 +138,24 @@ match_key_bind :: proc(app: ^App, key_bind: Key_Bind) -> bool{
     for i in 0..<app.key_binds.len{
         if app.key_binds.buffer[i] != key_bind[i] do return false;
     }
+    
+    if number != nil{
+        if app.key_binds.number == 0{
+            number^ = 1;
+        } else {
+            number^ = app.key_binds.number;
+        }
+    }
 
-    app.key_binds.len          = 0;
-    app.key_binds.current_wait = 0;
-
+    reset_keybinds(app);
     return true;
 }
 
+reset_keybinds :: proc(app: ^App){
+    app.key_binds.len          = 0;
+    app.key_binds.current_wait = 0;
+    app.key_binds.number       = 0;
+}
 
 Key :: struct{
     key: rl.KeyboardKey,

@@ -19,7 +19,10 @@ Settings :: struct{
         path: string,
         font: rl.Font,
         loaded: bool,
-    }
+    },
+
+    tab_size: int,
+    autosave: bool,
 }
 
 init_settings :: proc(s: ^Settings, app: ^App){
@@ -30,6 +33,9 @@ init_settings :: proc(s: ^Settings, app: ^App){
 
     s.font.size = 20;
     s.font.path = "font/InconsolataNerdFont-Regular.ttf";
+
+    s.tab_size = 4;
+    s.autosave = true;
 
     apply(s, app);
 }

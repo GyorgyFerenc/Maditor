@@ -4,7 +4,10 @@ import s "core:strings"
 import "core:mem"
 import "core:fmt"
 import "core:c"
+import "core:os"
+
 import rl "vendor:raylib"
+
 import p "src:parser"
 import "src:Buffer"
 
@@ -159,12 +162,10 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
             return;
         }
         tw := cast(^Text_Window) window.data;
-        buffer := tw.buffer;
+        buffer := &tw.buffer;
 
         path, ok1 := get_atomic(sexpr, 1, p.String);
-        if ok1{
-            buffer.path = path;
-        } 
+        if ok1 do buffer.path = path;
         Buffer.save(buffer, app.fa);
         set_response(self, "File was saved");
     case "open", "o":
@@ -175,6 +176,20 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
         } 
         
         open_to_text_window(path, app);
+    case "open-folder", "of":
+        path, ok := get_atomic(sexpr, 1, p.String);
+        if !ok{
+            set_response(self, "open-folder expects a string as path");
+            return;
+        } 
+
+        context.temp_allocator = app.fa;
+        err := os.set_current_directory(path);
+        if err != os.ERROR_NONE{
+            set_response(self, "error at opening folder");
+        } else {
+            set_response(self, "folder succesfully opened");
+        }
     case "close", "c":
         close_window(app, app.ui.active_window);
     case "exit", "e":

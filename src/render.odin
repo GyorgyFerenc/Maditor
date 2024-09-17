@@ -1,6 +1,10 @@
 package main
 
 import "core:c"
+import "core:mem"
+import "core:unicode/utf8"
+import s "core:strings"
+//import "core:unicode/utf8"
 
 import rl "vendor:raylib"
 
@@ -118,7 +122,6 @@ draw_box :: proc(b: Box, c: rl.Color){
     rl.DrawRectangleV(b.pos, b.size, c);
 }
 
-
 draw_box_outline :: proc(b: Box, thickness: f32, c: rl.Color){
     rl.DrawRectangleLinesEx(box_to_rl_rectangle(b), thickness, c);
 }
@@ -128,4 +131,88 @@ Text_Style :: struct{
     size: f32,
     spacing: f32,
     color: rl.Color,
+}
+
+Vertical_Align :: enum{
+    Top,
+    Center,
+    Bottom,
+}
+align_vertical :: proc(b: Box, to: Box, b_align: Vertical_Align, to_align: Vertical_Align) -> Box{
+    result := b;
+    switch to_align{
+    case .Top:
+        switch b_align{
+        case .Top:    result.pos.y = to.pos.y;
+        case .Center: result.pos.y = to.pos.y - b.size.y / 2;
+        case .Bottom: result.pos.y = to.pos.y - b.size.y;
+        }
+    case .Center:
+        switch b_align{
+        case .Top:    result.pos.y = to.pos.y + to.size.y / 2;
+        case .Center: result.pos.y = to.pos.y + to.size.y / 2 - b.size.y / 2;
+        case .Bottom: result.pos.y = to.pos.y + to.size.y / 2 - b.size.y;
+        }
+    case .Bottom:
+        switch b_align{
+        case .Top:    result.pos.y = to.pos.y + to.size.y;
+        case .Center: result.pos.y = to.pos.y + to.size.y - b.size.y / 2;
+        case .Bottom: result.pos.y = to.pos.y + to.size.y - b.size.y;
+        }
+    }
+    return result;
+}
+
+Horizontal_Align :: enum{
+    Left,
+    Center,
+    Right,
+}
+align_horizontal :: proc(b: Box, to: Box, b_align: Horizontal_Align, to_align: Horizontal_Align) -> Box{
+    result := b;
+    switch to_align{
+    case .Left:
+        switch b_align{
+        case .Left:   result.pos.x = to.pos.x;
+        case .Center: result.pos.x = to.pos.x - b.size.x / 2;
+        case .Right:  result.pos.x = to.pos.x - b.size.x;
+        }
+    case .Center:
+        switch b_align{
+        case .Left:   result.pos.x = to.pos.x + to.size.x / 2;
+        case .Center: result.pos.x = to.pos.x + to.size.x / 2 - b.size.x / 2;
+        case .Right:  result.pos.x = to.pos.x + to.size.x / 2 - b.size.x;
+        }
+    case .Right:
+        switch b_align{
+        case .Left:   result.pos.x = to.pos.x + to.size.x;
+        case .Center: result.pos.x = to.pos.x + to.size.x - b.size.x / 2;
+        case .Right:  result.pos.x = to.pos.x + to.size.x - b.size.x;
+        }
+    }
+    return result;
+}
+
+
+// Todo(Ferenc): do a custom draw text
+
+// This is janky do better lol
+measure_rune_size :: proc(r: rune, style: Text_Style) -> v2{
+    str: [5]u8;
+    encoded, size := utf8.encode_rune(r);
+    for i in 0..<size{
+        str[i] = encoded[i];
+    }
+
+    ptr := transmute(cstring) &str;
+    return rl.MeasureTextEx(style.font, ptr, style.size, style.spacing);
+
+    //    let scale = size / cast(f32) font.baseSize;
+    //    let rect = GetGlyphAtlasRec(font, rune);
+    //    return rect.width * scale;
+}
+
+measure_text :: proc(str: string, style: Text_Style, fa: mem.Allocator) -> v2{
+    cstr := s.clone_to_cstring(str, fa);
+    return rl.MeasureTextEx(style.font, cstr, style.size, style.spacing);
 }

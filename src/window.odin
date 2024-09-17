@@ -20,6 +20,7 @@ Window :: struct{
 Window_Data :: struct{
     id: Window_Id,
     box: Box,
+    title: string,
 }
 
 update_window :: proc(w: Window, app: ^App){
