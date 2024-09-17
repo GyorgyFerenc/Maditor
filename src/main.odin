@@ -22,6 +22,7 @@ main :: proc(){
     app: App;
     init(&app);
 
+    //debug_settings(&app);
     open_to_text_window("test.temp", &app);
 
     start := time.now();
@@ -43,3 +44,14 @@ main :: proc(){
     }
 }
 
+debug_settings :: proc(app: ^App){
+    m := rl.GetCurrentMonitor();
+    w := cast(int) rl.GetMonitorWidth(m);
+    h := cast(int) rl.GetMonitorHeight(m);
+    app.settings.window.size = {w, h};
+    app.settings.window.fullscreen = true;
+
+    fmt.println(w, h);
+
+    apply(&app.settings, app);
+}

@@ -10,6 +10,7 @@ Null_Id :: Id(-1);
 Elem :: struct ($T: typeid){
     el: T,
     next: Id,
+    free: bool,
 }
 
 Pool_Array :: struct ($T: typeid){
@@ -32,12 +33,22 @@ destroy :: proc(self: Pool_Array($T)){
 }
 
 get :: proc(self: Pool_Array($T), id: Id) -> (T, bool){
-    if 0 <= id && cast(int) id < len(self.array) do return self.array[id].el, true;
+    if 0 <= id && cast(int) id < len(self.array) {
+        if !self.array[id].free{
+            return self.array[id].el, true;
+        }
+    }
+
+
     return {}, false;
 }
 
 get_ptr :: proc(self: Pool_Array($T), id: Id) -> (^T, bool){
-    if 0 <= id && cast(int) id < len(self.array) do return &self.array[id].el, true;
+    if 0 <= id && cast(int) id < len(self.array) {
+        if !self.array[id].free{
+            return &self.array[id].el, true;
+        }
+    }
     return {}, false;
 }
 
@@ -66,6 +77,7 @@ alloc :: proc(self: ^Pool_Array($T), el: T) -> Id{
 
     self.free = self.array[id].next;
     self.array[id].el = el;
+    self.array[id].free = false;
     return id;
 }
 
@@ -74,11 +86,13 @@ free_all :: proc(self: ^Pool_Array($T)){
 
     for &el, id in self.array{
         el.next = self.free;
+        el.free = true;
         self.free = cast(Id) id;
     }
 }
 
 free :: proc(self: ^Pool_Array($T), id: Id){
     self.array[id].next = self.free;
+    self.array[id].free = true;
     self.free = id;
 }

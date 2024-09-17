@@ -35,7 +35,7 @@ load :: proc(path: string, gpa, fa: mem.Allocator) -> (buffer: Buffer, ok: bool)
     reserve(&buffer.runes, len(content) / 3 + 1);
 
     for r in content{
-        append(&buffer.runes, r);
+        if r != '\r' do append(&buffer.runes, r);
     }
 
     return buffer, true;
@@ -177,12 +177,12 @@ remove_rune_left :: proc(b: ^Buffer, p: Pos_Id){
 }
 
 remove_rune_left_i :: proc(b: ^Buffer, pos: int){
-    for &position in b.positions{
-        if position >= pos{
-            position -= 1;
-        }
-    }
     if pos > 0{
+        for &position in b.positions{
+            if position >= pos{
+                position -= 1;
+            }
+        }
         ordered_remove(&b.runes, pos - 1);
     }
 }
@@ -215,6 +215,25 @@ to_string :: proc(b: Buffer, allocator: mem.Allocator) -> string{
 
 length :: proc(b: Buffer) -> int{
     return len(b.runes);
+}
+
+/*
+   Counting starts from 1
+*/
+get_line_number :: proc(b: Buffer, p: Pos_Id) -> int{
+    return get_line_number_i(b, get_pos(b, p));
+}
+
+get_line_number_i :: proc(b: Buffer, pos: int) -> int{
+    count := 1;
+
+    it := iter(b);
+    for r, idx in next(&it){
+        if idx == pos do break;
+        if r == '\n' do count += 1;
+    }
+
+    return count;
 }
 
 Iter :: struct{

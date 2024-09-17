@@ -54,27 +54,33 @@ init :: proc(app: ^App){
     app.ui.active_window = Pool_Array.Null_Id;
 
     init_settings(&app.settings, app);
+
+    init_command_line(&app.ui.cmd, app.gpa);
 }
 
 update :: proc(app: ^App){
     update_key_binds(app);
-
     global_key_binds(app);
 
     ui := &app.ui;
+    update_command_line(&ui.cmd, app);
+
     window, ok := get_window(app, ui.active_window);
     if ok {
         window.box.pos = {0, 0};
         window.box.size = to_v2(app.settings.window.size);
 
-        do_window(window, app);
+        update_window(window, app);
+        draw_window(window, app);
     } else {
         show_default_screen(app);
     }
+
+    draw_command_line(&ui.cmd, app);
 }
 
 show_default_screen :: proc(app: ^App){
-    rl.DrawText("Maditor is a simple editor for the mentally deranged\nPress : for typing commands.", 0, 0, 20, rl.WHITE);
+    rl.DrawText("Maditor is a simple editor for the mentally deranged\nPress ctrl+; for typing commands.", 0, 0, 20, rl.WHITE);
 }
 
 global_key_binds :: proc(app: ^App){
@@ -130,36 +136,6 @@ match_key_bind :: proc(app: ^App, key_bind: Key_Bind) -> bool{
     app.key_binds.current_wait = 0;
 
     return true;
-}
-
-Settings :: struct{
-    window: struct{
-        size: v2i,
-        fullscreen: bool,
-    },
-    key_binds: struct{
-        max_wait: f32, // ms
-    },
-}
-
-init_settings :: proc(s: ^Settings, app: ^App){
-    s.window.size        = {1080, 720};
-    s.window.fullscreen  = false;
-    s.key_binds.max_wait = 1000 / 2; 
-
-    apply(s^, app);
-}
-
-apply :: proc(s: Settings, app: ^App){
-    if s.window.fullscreen{
-        rl.SetWindowState({.FULLSCREEN_MODE});
-    } else {
-        rl.ClearWindowState({.FULLSCREEN_MODE});
-    }
-
-    rl.SetWindowSize(cast(c.int) s.window.size.x, cast(c.int) s.window.size.y);
-
-    app.key_binds.max_wait = s.key_binds.max_wait;
 }
 
 

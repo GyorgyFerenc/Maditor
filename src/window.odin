@@ -1,5 +1,7 @@
 package main
 
+import "core:fmt"
+
 import "src:Pool_Array"
 
 Window_Id :: Pool_Array.Id;
@@ -8,8 +10,10 @@ Window_Proc :: proc(rawptr, ^App);
 Window :: struct{
     using window_data: ^Window_Data,
 
+    kind: typeid,
     data: rawptr,
-    procedure: Window_Proc,
+    update:  Window_Proc,
+    draw:    Window_Proc,
     destroy: Window_Proc,
 }
 
@@ -18,8 +22,12 @@ Window_Data :: struct{
     box: Box,
 }
 
-do_window :: proc(w: Window, app: ^App){
-    if w.procedure != nil do w.procedure(w.data, app);
+update_window :: proc(w: Window, app: ^App){
+    if w.update != nil do w.update(w.data, app);
+}
+
+draw_window :: proc(w: Window, app: ^App){
+    if w.draw != nil do w.draw(w.data, app);
 }
 
 destroy :: proc(w: Window, app: ^App){
@@ -45,21 +53,30 @@ close_window :: proc(app: ^App, id: Window_Id){
         destroy(w, app);
         Pool_Array.free(&app.ui.windows, id);
     }
+    if id == app.ui.active_window do app.ui.active_window = Pool_Array.Null_Id;
 }
 
 get_window :: proc(app: ^App, id: Window_Id) -> (Window, bool){
     return Pool_Array.get(app.ui.windows, id);
 }
 
+get_active_window :: proc(app: ^App) -> (Window, bool){
+    return get_window(app, app.ui.active_window);
+}
+
 /*
    Generic to window
 */
-generic_to_window :: proc(self: ^$T, $do_proc, $destroy_proc: proc(^T, ^App)) -> Window{
+generic_to_window :: proc(self: ^$T, $update_proc, $draw_proc,$destroy_proc: proc(^T, ^App)) -> Window{
     return {
         window_data = &self.window_data,
+        kind = T,
         data = self,
-        procedure = proc(data: rawptr, app: ^App){
-            do_proc(cast(^T) data, app);
+        update = proc(data: rawptr, app: ^App){
+            update_proc(cast(^T) data, app);
+        },
+        draw = proc(data: rawptr, app: ^App){
+            draw_proc(cast(^T) data, app);
         },
         destroy = proc(data: rawptr, app: ^App){
             destroy_proc(cast(^T) data, app);
