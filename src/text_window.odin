@@ -15,6 +15,7 @@ import "src:Buffer"
 Text_Window :: struct{
     using window_data: Window_Data,
     
+    app: ^App,
     buffer: Buffer.Buffer,
     cursor: Buffer.Pos_Id,
     colors: [dynamic]Text_Window_Color,
@@ -25,15 +26,21 @@ Text_Window :: struct{
     },
     view_y: f32,
     visual: struct{
-        cursor: Buffer.Pos_Id,
+        anchor: Buffer.Pos_Id,
+        line: bool,
 
         start: Buffer.Pos_Id,
-        end: Buffer.Pos_Id,
+        end:   Buffer.Pos_Id,
     },
     draw: struct{
         line_count: bool,
         status_line: bool,
         text: Text_Style,
+    },
+    search: struct{
+        pattern: string,
+        found_pos: int,
+        found: bool,
     },
 }
 
@@ -43,13 +50,14 @@ Text_Window_Color :: struct{
     len:   int,
 }
 
-init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, alloc: mem.Allocator){
+init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
+    self.app    = app;
     self.buffer = buffer;
-    self.colors = make([dynamic]Text_Window_Color, allocator = alloc);
+    self.colors = make([dynamic]Text_Window_Color, allocator = app.gpa);
     self.cursor = Buffer.new_pos(&self.buffer);
-    self.visual.cursor = Buffer.new_pos(&self.buffer);
-    self.visual.start  = self.visual.cursor;
-    self.visual.end    = self.cursor;
+    self.visual.anchor = Buffer.new_pos(&self.buffer); 
+    self.visual.start  = Buffer.new_pos(&self.buffer); 
+    self.visual.end    = Buffer.new_pos(&self.buffer);
     self.draw.line_count  = true;
     self.draw.status_line = true;
     path, ok := self.buffer.path.?;
@@ -72,6 +80,7 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
     if match_key_bind(app, BACK_TO_NORMAL){
         self.mode = .Normal;
     }
+
     number := 1;
     if self.mode == .Normal || self.mode == .Visual{
         if match_key_bind(app, MOVE_LEFT, &number){
@@ -105,6 +114,9 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             for _ in 0..<number{ move_cursor_by_word_inside(self, .Backward); }
         }
         if match_key_bind(app, CENTER_SCREEN){
+            // Todo(Ferenc): This has a bug when wrongly renders and create crooked characters
+            // lol what the actual fuck
+
             line  := Buffer.get_line_number(self.buffer, self.cursor);
             pos_y := cast(f32) line * self.draw.text.size;
             b := align_vertical(self.box, Box{{0, pos_y}, {0, self.draw.text.size}}, .Center, .Center);
@@ -122,6 +134,12 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
         if match_key_bind(app, GO_TO_END_FILE){
             Buffer.set_pos(&self.buffer, self.cursor, Buffer.length(self.buffer) - 1);
+        }
+        if match_key_bind(app, FIND_FORWARD){
+            find_next(self, .Forward);
+        }
+        if match_key_bind(app, FIND_BACKWARD){
+            find_next(self, .Backward);
         }
     }
 
@@ -153,6 +171,9 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         if match_key_bind(app, NORMAL_GO_TO_VISUAL){
             go_to_visual_mode(self);
         }
+        if match_key_bind(app, NORMAL_GO_TO_VISUAL_LINE){
+            go_to_visual_mode(self, true);
+        }
         if match_key_bind(app, NORMAL_PASTE){
             for r in app.copy_buffer{
                 Buffer.insert_rune(&self.buffer, self.cursor, r);
@@ -176,22 +197,29 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
     case .Visual:
         visual := &self.visual;
-        vc := Buffer.get_pos(self.buffer, visual.cursor);
-        c  := Buffer.get_pos(self.buffer, self.cursor);
-        start := 0;
-        end   := 0;
+        anchor_pos := Buffer.get_pos(self.buffer, visual.anchor);
+        cursor_pos := Buffer.get_pos(self.buffer, self.cursor);
 
-        if vc < c{
-            visual.start = visual.cursor;
-            visual.end = self.cursor;
-            start = vc;
-            end   = c;
+        if visual.line {
+            if cursor_pos < anchor_pos{
+                Buffer.set_pos(&self.buffer, visual.start, Buffer.find_line_begin_i(self.buffer, cursor_pos));
+                Buffer.set_pos(&self.buffer, visual.end,   Buffer.find_line_end_i(self.buffer,   anchor_pos));
+            } else {
+                Buffer.set_pos(&self.buffer, visual.start, Buffer.find_line_begin_i(self.buffer, anchor_pos));
+                Buffer.set_pos(&self.buffer, visual.end,   Buffer.find_line_end_i(self.buffer,   cursor_pos));
+            }
         } else {
-            visual.start = self.cursor;
-            visual.end = visual.cursor;
-            start = c;
-            end   = vc;
+            if cursor_pos < anchor_pos{
+                Buffer.set_pos(&self.buffer, visual.start, cursor_pos);
+                Buffer.set_pos(&self.buffer, visual.end,   anchor_pos);
+            } else {
+                Buffer.set_pos(&self.buffer, visual.start, anchor_pos);
+                Buffer.set_pos(&self.buffer, visual.end,   cursor_pos);
+            }
         }
+
+        start := Buffer.get_pos(self.buffer, visual.start);
+        end   := Buffer.get_pos(self.buffer, visual.end);
 
         select_len := end - start + 1;
         if match_key_bind(app, VISUAL_DELETE){
@@ -199,11 +227,10 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
         if match_key_bind(app, VISUAL_DELETE_GO_INSERT){
             pos := Buffer.get_pos(self.buffer, visual.start);         
+            Buffer.set_pos(&self.buffer, self.cursor, end + 1);
             Buffer.remove_range_i(&self.buffer, pos, select_len);
 
-            move_cursor(self, .Right);
             go_to_insert_mode(self, app);
- 
        }
 
         if match_key_bind(app, VISUAL_COPY){
@@ -333,7 +360,7 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
         }
 
         if self.mode == .Visual{
-            start := Buffer.get_pos(self.buffer, self.visual.start);
+            start := Buffer.get_pos(self.buffer, self.visual.start);            
             end   := Buffer.get_pos(self.buffer, self.visual.end);
             b, _  := add_margin_side(rune_box, style.spacing, .Right);
             c := app.settings.color_scheme.foreground1;
@@ -465,7 +492,7 @@ text_window_to_window :: proc(self: ^Text_Window) -> Window{
 
 empty_text_window :: proc(app: ^App) -> Window_Id{
     tw := new(Text_Window, app.gpa);
-    init_text_window(tw, Buffer.create(app.gpa), app.gpa);
+    init_text_window(tw, Buffer.create(app.gpa), app);
     id := add_window(app, text_window_to_window(tw));
     set_active(id, app);
     return id;
@@ -476,7 +503,7 @@ open_to_text_window :: proc(path: string, app: ^App) -> (Window_Id, bool){
     if !ok do return {}, false;
 
     tw := new(Text_Window, app.gpa);
-    init_text_window(tw, buffer, app.gpa);
+    init_text_window(tw, buffer, app);
     id := add_window(app, text_window_to_window(tw));
     set_active(id, app);
 
@@ -488,9 +515,10 @@ go_to_insert_mode :: proc(self: ^Text_Window, app: ^App){
     discard_next_rune(app);
 }
 
-go_to_visual_mode :: proc(self: ^Text_Window){
+go_to_visual_mode :: proc(self: ^Text_Window, line := false){
     self.mode = .Visual;
-    Buffer.set_pos_to_pos(&self.buffer, self.visual.cursor, self.cursor);
+    Buffer.set_pos_to_pos(&self.buffer, self.visual.anchor, self.cursor);
+    self.visual.line = line;
 }
 
 Condition_Move :: enum{Forward, Backward}
@@ -540,6 +568,56 @@ jump_to_line :: proc(self: ^Text_Window, line_number: int){
     Buffer.set_pos(&self.buffer, self.cursor, Buffer.get_position_of_line(self.buffer, line_number));
 }
 
+/*
+    Clones the pattern
+*/
+start_search :: proc(self: ^Text_Window, pattern: string){
+    search := &self.search;
+    if search.pattern != ""{
+        delete(search.pattern, self.app.gpa);
+    }
+    search.pattern = s.clone(pattern, self.app.gpa);
+    search.found_pos = 0;
+    find_next(self);
+}
+
+find_next :: proc(self: ^Text_Window, dir: enum{Forward, Backward} = .Forward){
+    search := &self.search;
+    search.found = false;
+    text := Buffer.to_string(self.buffer, self.app.fa);
+    
+    pos := search.found_pos;
+
+    increment: int;
+    switch dir{
+    case .Forward: increment = 1;
+    case .Backward: increment = -1;
+    }
+
+    for {
+        pos += increment;
+        if pos < 0 || pos >= len(text){
+            break;
+        }
+        
+        if match(text[pos:], search.pattern){
+            search.found_pos = pos;
+            search.found = true;
+            break;
+        }
+    }
+
+    if self.search.found {
+        Buffer.set_pos(&self.buffer, self.cursor, self.search.found_pos);
+    } else {
+        search.found_pos = 0;
+    }
+
+    match :: proc(text: string, pattern: string) -> bool{
+        return s.starts_with(text, pattern);
+    }
+}
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -555,10 +633,13 @@ GO_TO_BEGIN_LINE          :: Key_Bind{Key{key = .H, shift = true}};
 GO_TO_END_LINE            :: Key_Bind{Key{key = .L, shift = true}};
 GO_TO_BEGIN_FILE          :: Key_Bind{Key{key = .J, shift = true}};
 GO_TO_END_FILE            :: Key_Bind{Key{key = .K, shift = true}};
+FIND_FORWARD              :: Key_Bind{Key{key = .N}};
+FIND_BACKWARD             :: Key_Bind{Key{key = .N, shift = true}};
 
 NORMAL_GO_TO_INSERT                 :: Key_Bind{Key{key = .I}};
 NORMAL_REMOVE_RUNE                  :: Key_Bind{Key{key = .X}};
 NORMAL_GO_TO_VISUAL                 :: Key_Bind{Key{key = .V}};
+NORMAL_GO_TO_VISUAL_LINE            :: Key_Bind{Key{key = .V, shift = true}};
 NORMAL_GO_TO_INSERT_APPEND          :: Key_Bind{Key{key = .A}};
 NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW :: Key_Bind{Key{key = .O}};
 NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE  :: Key_Bind{Key{key = .O, shift = true}};

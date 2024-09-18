@@ -86,17 +86,18 @@ draw_command_line :: proc(self: ^Command_Line, app: ^App){
     };
     draw_scrissored_text(cstr, input_line, style);
 
-    draw_box(help_box, color_scheme.background2);
-    draw_box_outline(help_box, 2, color_scheme.foreground1);
-
-    inner := remove_padding(help_box, 4);
-    cstr = s.clone_to_cstring(self.response, app.fa);
-    {
+ 
+    if self.response != ""{
+        draw_box(help_box, color_scheme.background2);
+        draw_box_outline(help_box, 2, color_scheme.foreground1);
+        inner := remove_padding(help_box, 4);
+        cstr = s.clone_to_cstring(self.response, app.fa);
+  
         begin_box_draw_mode(inner);
         rl.DrawTextEx(style.font, cstr, inner.pos, style.size, style.spacing, style.color);
         defer end_box_draw_mode();
-    }
-    
+     } 
+   
     draw_scrissored_text :: proc(cstr: cstring, box: Box, text_style: Text_Style){
         text_size := rl.MeasureTextEx(text_style.font, cstr, text_style.size, text_style.spacing);
 
@@ -118,6 +119,7 @@ empty_response :: proc(self: ^Command_Line){
     if self.response != ""{
         delete(self.response, self.allocator);
     }
+    self.response = "";
 }
 
 set_response :: proc(self: ^Command_Line, str: string){
@@ -254,7 +256,24 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
         }
         tw := cast(^Text_Window) window.data;
         jump_to_line(tw, cast(int) line);
+    case "grep", "g":
+        pattern, ok := get_atomic(sexpr, 1, p.String);
+        if !ok{
+            set_response(self, "grep needs a string as an argument");
+            return;
+        }
+        window, ok2 := get_active_window(app);
+        if !ok2 {
+            set_response(self, "No active window");
+            return;
+        }
 
+        if window.kind != Text_Window{
+            set_response(self, "Active window is not text window");
+            return;
+        }
+        tw := cast(^Text_Window) window.data;
+        start_search(tw, pattern);
     case:
         set_response(self, "Unkown command");
     }

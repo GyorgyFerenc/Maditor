@@ -200,7 +200,6 @@ remove_range_i :: proc(b: ^Buffer, pos, len: int){
     b.dirty = true;
 
     for _ in 0..<len{
-        fmt.println("asd");
         remove_rune_i(b, pos);
     }
 }
