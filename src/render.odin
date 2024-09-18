@@ -216,3 +216,4 @@ measure_text :: proc(str: string, style: Text_Style, fa: mem.Allocator) -> v2{
     cstr := s.clone_to_cstring(str, fa);
     return rl.MeasureTextEx(style.font, cstr, style.size, style.spacing);
 }
+

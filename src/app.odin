@@ -20,6 +20,7 @@ App :: struct{
     delta_duration: time.Duration,
 
     settings: Settings,
+    copy_buffer: [dynamic]rune,
 
     key_binds: struct{
         len: int,
@@ -34,6 +35,7 @@ App :: struct{
     ui: struct{
         windows: Pool_Array.Pool_Array(Window),
         active_window: Window_Id,
+        window_select: Maybe(Window_Id),
 
         cmd: Command_Line,
     },
@@ -50,6 +52,7 @@ init :: proc(app: ^App){
     buffer := make([]u8, 10 * mem.Megabyte, allocator = app.gpa);
     mem.arena_init(&app.arena, buffer);
     app.fa = mem.arena_allocator(&app.arena);
+    app.copy_buffer = make([dynamic]rune, allocator = app.gpa);
 
     app.ui.windows = Pool_Array.create(Window, app.gpa);
     app.ui.active_window = Pool_Array.Null_Id;
@@ -62,6 +65,7 @@ init :: proc(app: ^App){
 }
 
 update :: proc(app: ^App){
+    detect_window_size_change(app);
     update_key_binds(app);
     global_key_binds(app);
 
@@ -87,7 +91,9 @@ show_default_screen :: proc(app: ^App){
 }
 
 global_key_binds :: proc(app: ^App){
-    
+    if match_key_bind(app, SELECT_WINDOW){
+        open_window_select(app);
+    }
 }
 
 discard_next_rune :: proc(app: ^App){
@@ -188,3 +194,5 @@ poll_key :: proc() -> (Key, bool){
 }
 
 Key_Bind :: []Key;
+
+SELECT_WINDOW :: Key_Bind{Key{key = .P, ctrl = true}};

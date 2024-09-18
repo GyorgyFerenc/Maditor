@@ -25,16 +25,15 @@ init_command_line :: proc(self: ^Command_Line, allocator: mem.Allocator){
 
 update_command_line :: proc(self: ^Command_Line, app: ^App){
     if !self.active{
-        if match_key_bind(app, {{key = .SEMICOLON, ctrl = true}}){
+        if match_key_bind(app, TOGGLE_COMMAND_LINE){
             self.active = true;
-            //discard_next_rune(app);
             s.builder_reset(&self.builder);
             self.response = "";
         }
         return;
     }
 
-    if match_key_bind(app, {{key = .C, ctrl = true}}) {
+    if match_key_bind(app, CLOSE_COMMAND_LINE) || match_key_bind(app, TOGGLE_COMMAND_LINE){
         self.active = false;
     }
 
@@ -165,7 +164,7 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
         buffer := &tw.buffer;
 
         path, ok1 := get_atomic(sexpr, 1, p.String);
-        if ok1 do buffer.path = path;
+        if ok1 do Buffer.set_path(buffer, path);
         Buffer.save(buffer, app.fa);
         set_response(self, "File was saved");
     case "open", "o":
@@ -175,7 +174,11 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
             return;
         } 
         
-        open_to_text_window(path, app);
+        _, ok = open_to_text_window(path, app);
+        if !ok {
+            set_response(self, "Could not open path");
+            return;
+        }
     case "open-folder", "of":
         path, ok := get_atomic(sexpr, 1, p.String);
         if !ok{
@@ -194,6 +197,64 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
         close_window(app, app.ui.active_window);
     case "exit", "e":
         app.running = false;
+    case "fullscreen", "fs":
+        app.settings.window.fullscreen = true;
+
+        apply(&app.settings, app);
+    case "open-files-in-folder", "ofif":
+        path, ok := get_atomic(sexpr, 1, p.String);
+        if !ok{
+            set_response(self, "needs a path to a directory");
+            return;
+        }
+
+        context.temp_allocator = app.fa;
+        if !os.is_dir(path) {
+            set_response(self, "path provided is not a directory");
+            return;
+        }
+
+        hd, err := os.open(path, os.O_RDONLY);
+        if err != os.ERROR_NONE{
+            set_response(self, "Could not open folder");
+            return;
+        }
+
+        context.allocator = app.fa;
+        fi, err2 := os.read_dir(hd, 0, app.gpa);
+        if err2 != os.ERROR_NONE{
+            set_response(self, "Could not read folder");
+            return;
+        }
+        for info in fi{
+            if info.is_dir do continue;
+            builder := s.builder_make(app.fa);
+            s.write_string(&builder, path);
+            s.write_string(&builder, "/");
+            s.write_string(&builder, info.name);
+            name := s.to_string(builder);
+            open_to_text_window(name, app);
+        }
+    case "jump", "j":
+        line, ok := get_atomic(sexpr, 1, p.Integer);
+        if !ok {
+            set_response(self, "jump needs an integer as argument");
+            return;
+        }
+
+        window, ok2 := get_active_window(app);
+        if !ok2 {
+            set_response(self, "No active window");
+            return;
+        }
+
+        if window.kind != Text_Window{
+            set_response(self, "Active window is not text window");
+            return;
+        }
+        tw := cast(^Text_Window) window.data;
+        jump_to_line(tw, cast(int) line);
+
     case:
         set_response(self, "Unkown command");
     }
@@ -213,3 +274,6 @@ get_atomic :: proc(sexpr: ^p.Sexpr, pos: int, $T: typeid) -> (value: T, ok: bool
     atomic := get_el_sexpr(sexpr, pos, p.Atomic) or_return;
     return atomic^.(T);
 }
+
+TOGGLE_COMMAND_LINE :: Key_Bind{Key{key = .SEMICOLON, ctrl = true}}
+CLOSE_COMMAND_LINE  :: Key_Bind{Key{key = .C, ctrl = true}}

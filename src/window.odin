@@ -65,6 +65,11 @@ get_active_window :: proc(app: ^App) -> (Window, bool){
     return get_window(app, app.ui.active_window);
 }
 
+window_exist :: proc(app: ^App, id: Window_Id) -> bool{
+    _, ok := Pool_Array.get(app.ui.windows, id);
+    return ok;
+}
+
 /*
    Generic to window
 */

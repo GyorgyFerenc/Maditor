@@ -80,7 +80,7 @@ build :: proc(args: Args){
     case .Debug:
         run(`odin build src -collection:src=src -debug -out:main.exe`);
     case .Release:
-        run(`odin build src -collection:src=src -o:speed -out:main.exe`);
+        run(`odin build src -collection:src=src -o:speed -out:mad.exe`);
     case .Playground:
         run(`odin build src -collection:src=src -debug -define:PLAYGROUND=true -out:main.exe`);
     }

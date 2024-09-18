@@ -14,25 +14,35 @@ Buffer :: struct{
     runes:     [dynamic]rune,
     positions: [dynamic]int,
     dirty:     bool,
+    allocator: mem.Allocator,
 }
 
 create :: proc(allocator: mem.Allocator) -> Buffer{
     b := Buffer{
         runes     = make([dynamic]rune, allocator = allocator),
         positions = make([dynamic]int, allocator = allocator),
+        allocator = allocator,
     }
     return b;
 }
 
 destroy :: proc(b: Buffer) {
+    p, ok := b.path.?;
+    if ok do delete(p, b.allocator);
     delete(b.runes);
     delete(b.positions);
 }
 
+// clones the path
+set_path :: proc(b: ^Buffer, path: string){
+    b.path = s.clone(path, b.allocator);
+}
+
+// clones the path
 load :: proc(path: string, gpa, fa: mem.Allocator) -> (buffer: Buffer, ok: bool){
     content := read_file(path, gpa, fa) or_return;
     buffer = create(gpa);
-    buffer.path = path;
+    set_path(&buffer, path);
     reserve(&buffer.runes, len(content) / 3 + 1);
 
     for r in content{
@@ -190,6 +200,7 @@ remove_range_i :: proc(b: ^Buffer, pos, len: int){
     b.dirty = true;
 
     for _ in 0..<len{
+        fmt.println("asd");
         remove_rune_i(b, pos);
     }
 }
@@ -257,6 +268,29 @@ get_line_number_i :: proc(b: Buffer, pos: int) -> int{
     }
 
     return count;
+}
+
+/*
+    Counting of line numbers starts from 1
+*/
+get_position_of_line :: proc(b: Buffer, line_number: int) -> int{
+    line_number := line_number - 1;
+    pos := 0;
+
+    it := iter(b);
+    for r, idx in next(&it){
+        if line_number == 0 do break;
+        if r == '\n' {
+            line_number -= 1;
+            pos = idx + 1;
+        }
+    }
+
+    if pos >= length(b){
+        pos = length(b) - 1;
+    }
+
+    return pos;
 }
 
 Iter :: struct{

@@ -15,6 +15,8 @@ main :: proc(){
     context.allocator      = mem.panic_allocator();
     context.temp_allocator = mem.panic_allocator();
 
+    rl.SetConfigFlags({.WINDOW_RESIZABLE});
+
     rl.InitWindow(1080, 720, "Maditor");
     defer rl.CloseWindow();
     rl.SetExitKey(.KEY_NULL);
@@ -22,8 +24,8 @@ main :: proc(){
     app: App;
     init(&app);
 
-    //debug_settings(&app);
     open_to_text_window("test.temp", &app);
+    //debug_settings(&app);
 
     start := time.now();
     for app.running{
@@ -45,13 +47,4 @@ main :: proc(){
 }
 
 debug_settings :: proc(app: ^App){
-    m := rl.GetCurrentMonitor();
-    w := cast(int) rl.GetMonitorWidth(m);
-    h := cast(int) rl.GetMonitorHeight(m);
-    app.settings.window.size = {w, h};
-    app.settings.window.fullscreen = true;
-
-    fmt.println(w, h);
-
-    apply(&app.settings, app);
 }

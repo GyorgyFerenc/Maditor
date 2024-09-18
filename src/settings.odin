@@ -1,6 +1,7 @@
 package main
 
 import "core:c"
+import "core:fmt"
 import "core:strings"
 
 import rl "vendor:raylib"
@@ -42,9 +43,8 @@ init_settings :: proc(s: ^Settings, app: ^App){
 
 apply :: proc(s: ^Settings, app: ^App){
     if s.window.fullscreen{
-        rl.SetWindowState({.FULLSCREEN_MODE});
+        //rl.MaximizeWindow();
     } else {
-        rl.ClearWindowState({.FULLSCREEN_MODE});
     }
 
     rl.SetWindowSize(cast(c.int) s.window.size.x, cast(c.int) s.window.size.y);
@@ -61,6 +61,18 @@ apply :: proc(s: ^Settings, app: ^App){
         0,
     );
     s.font.loaded = true;
+}
+
+detect_window_size_change :: proc(app: ^App){
+    s := &app.settings;
+    size := &s.window.size;
+    
+    w := cast(int) rl.GetScreenWidth();
+    h := cast(int) rl.GetScreenHeight();
+    if size.x != w || size.y != h{
+        size.x = w;
+        size.y = h;
+    }
 }
 
 Color_Scheme :: struct{
@@ -104,7 +116,9 @@ Color_Scheme :: struct{
     punctuation: rl.Color,
 }
 
-DEFAULT_COLOR_SCHEME :: Color_Scheme{
+DEFAULT_COLOR_SCHEME  :: CONTRAST_COLOR_SCHEME;
+
+CONTRAST_COLOR_SCHEME :: Color_Scheme{
     gray =   rl.GRAY,
     red =    rl.RED,
     green =  rl.GREEN,
@@ -144,3 +158,50 @@ DEFAULT_COLOR_SCHEME :: Color_Scheme{
     separator =   rl.WHITE,
     punctuation = rl.WHITE,
 }
+
+ONE_DARK_RED   :: rl.Color{0xE0, 0x6C, 0x75, 0xFF};
+ONE_DARK_GREEN :: rl.Color{0xE0, 0x6C, 0x75, 0xFF};
+ONE_DARK_WHITE :: rl.Color{0xAA, 0xB2, 0xBF, 0xFF};
+
+// Todo(Ferenc): Do the rest
+ONE_DARK_COLOR_SCHEME :: Color_Scheme{
+    gray =   rl.GRAY,
+    red =    ONE_DARK_RED,
+    green =  ONE_DARK_GREEN,
+    blue =   rl.BLUE,
+    yellow = rl.YELLOW,
+    orange = rl.ORANGE,
+    pink =   rl.PINK,
+    purple = rl.PURPLE,
+    brown =  rl.BROWN,
+    white =  ONE_DARK_WHITE,
+    black =  rl.BLACK,
+
+    background1 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
+    background2 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
+    background3 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
+
+    foreground1 = rl.WHITE,
+    foreground2 = rl.Color{0xEE, 0xEE, 0xEE, 255 },
+    foreground3 = rl.Color{0xDD, 0xDD, 0xDD, 255 },
+
+    text =    ONE_DARK_WHITE,
+    error =   ONE_DARK_RED,
+    warning = rl.YELLOW,
+    note =    rl.GRAY,
+
+    keyword =     rl.PURPLE,
+    identifier =  ONE_DARK_RED,
+    variable =    ONE_DARK_RED,
+    parameter =   ONE_DARK_RED,
+    field =       ONE_DARK_RED,
+    enum_member = rl.ORANGE,
+    type =        rl.GREEN,
+    constant =    rl.ORANGE,
+    str =         rl.GREEN,
+    number =      rl.YELLOW,
+    operator =    rl.WHITE,
+    separator =   rl.WHITE,
+    punctuation = rl.WHITE,
+}
+

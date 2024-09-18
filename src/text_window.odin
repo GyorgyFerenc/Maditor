@@ -33,6 +33,7 @@ Text_Window :: struct{
     draw: struct{
         line_count: bool,
         status_line: bool,
+        text: Text_Style,
     },
 }
 
@@ -51,15 +52,22 @@ init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, alloc: mem.A
     self.visual.end    = self.cursor;
     self.draw.line_count  = true;
     self.draw.status_line = true;
-}
-
-update_text_window :: proc(self: ^Text_Window, app: ^App){
     path, ok := self.buffer.path.?;
     if ok {
         self.title = path;
     } else {
         self.title = "[EMPTY BUFFER]";
     }
+}
+
+update_text_window :: proc(self: ^Text_Window, app: ^App){
+    color_scheme := app.settings.color_scheme;
+    self.draw.text = Text_Style{
+        font = app.settings.font.font,
+        size = app.settings.font.size,
+        spacing = 1,
+        color = color_scheme.text,
+    };
 
     if match_key_bind(app, BACK_TO_NORMAL){
         self.mode = .Normal;
@@ -96,6 +104,25 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         if match_key_bind(app, MOVE_WORD_INSIDE_BACKWARD, &number){ 
             for _ in 0..<number{ move_cursor_by_word_inside(self, .Backward); }
         }
+        if match_key_bind(app, CENTER_SCREEN){
+            line  := Buffer.get_line_number(self.buffer, self.cursor);
+            pos_y := cast(f32) line * self.draw.text.size;
+            b := align_vertical(self.box, Box{{0, pos_y}, {0, self.draw.text.size}}, .Center, .Center);
+            self.view_y = b.pos.y;
+            if self.view_y < 0 do self.view_y = 0;
+        }       
+        if match_key_bind(app, GO_TO_BEGIN_LINE){
+            Buffer.set_pos(&self.buffer, self.cursor, Buffer.find_line_begin(self.buffer, self.cursor));
+        }
+        if match_key_bind(app, GO_TO_END_LINE){
+            Buffer.set_pos(&self.buffer, self.cursor, Buffer.find_line_end(self.buffer, self.cursor));
+        }
+        if match_key_bind(app, GO_TO_BEGIN_FILE){
+            Buffer.set_pos(&self.buffer, self.cursor, 0);
+        }
+        if match_key_bind(app, GO_TO_END_FILE){
+            Buffer.set_pos(&self.buffer, self.cursor, Buffer.length(self.buffer) - 1);
+        }
     }
 
     switch self.mode{
@@ -125,6 +152,11 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
         if match_key_bind(app, NORMAL_GO_TO_VISUAL){
             go_to_visual_mode(self);
+        }
+        if match_key_bind(app, NORMAL_PASTE){
+            for r in app.copy_buffer{
+                Buffer.insert_rune(&self.buffer, self.cursor, r);
+            }
         }
     case .Insert:
         if match_key_bind(app, INSERT_REMOVE_RUNE){
@@ -160,13 +192,27 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             start = c;
             end   = vc;
         }
-        
-        dgst := match_key_bind(app, VISUAL_DELETE_GO_INSERT);
-        if match_key_bind(app, VISUAL_DELETE) || dgst{
-            len := end - start + 1;
-            Buffer.remove_range(&self.buffer, visual.start, len);
-            if dgst do go_to_insert_mode(self, app);
+
+        select_len := end - start + 1;
+        if match_key_bind(app, VISUAL_DELETE){
+            Buffer.remove_range(&self.buffer, visual.start, select_len);
         }
+        if match_key_bind(app, VISUAL_DELETE_GO_INSERT){
+            pos := Buffer.get_pos(self.buffer, visual.start);         
+            Buffer.remove_range_i(&self.buffer, pos, select_len);
+
+            move_cursor(self, .Right);
+            go_to_insert_mode(self, app);
+ 
+       }
+
+        if match_key_bind(app, VISUAL_COPY){
+            clear(&app.copy_buffer);
+            for i in 0..<select_len{
+                append(&app.copy_buffer, Buffer.get_rune_i(self.buffer, start + i));
+            }
+        }
+
     }
 }
 
@@ -174,12 +220,7 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
     defer clear(&self.colors);
 
     color_scheme := app.settings.color_scheme;
-    style := Text_Style{
-        font = app.settings.font.font,
-        size = app.settings.font.size,
-        spacing = 1,
-        color = color_scheme.text,
-    };
+    style := self.draw.text; 
 
     big_text_box: Box = self.box;
 
@@ -422,21 +463,24 @@ text_window_to_window :: proc(self: ^Text_Window) -> Window{
     return generic_to_window(self, update_text_window, draw_text_window, destroy_text_window);
 }
 
-empty_text_window :: proc(app: ^App){
+empty_text_window :: proc(app: ^App) -> Window_Id{
     tw := new(Text_Window, app.gpa);
     init_text_window(tw, Buffer.create(app.gpa), app.gpa);
     id := add_window(app, text_window_to_window(tw));
     set_active(id, app);
+    return id;
 }
 
-open_to_text_window :: proc(path: string, app: ^App){
+open_to_text_window :: proc(path: string, app: ^App) -> (Window_Id, bool){
     buffer, ok := Buffer.load(path, app.gpa, app.fa);
-    if !ok do return;
+    if !ok do return {}, false;
 
     tw := new(Text_Window, app.gpa);
     init_text_window(tw, buffer, app.gpa);
     id := add_window(app, text_window_to_window(tw));
     set_active(id, app);
+
+    return id, true;
 }
 
 go_to_insert_mode :: proc(self: ^Text_Window, app: ^App){
@@ -492,6 +536,10 @@ length_of_int :: proc(nr: int) -> int{
     return count;
 }
 
+jump_to_line :: proc(self: ^Text_Window, line_number: int){
+    Buffer.set_pos(&self.buffer, self.cursor, Buffer.get_position_of_line(self.buffer, line_number));
+}
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -502,6 +550,11 @@ MOVE_WORD_FORWARD         :: Key_Bind{Key{key = .W}};
 MOVE_WORD_BACKWARD        :: Key_Bind{Key{key = .B}};
 MOVE_WORD_INSIDE_FORWARD  :: Key_Bind{Key{key = .W, shift = true}};
 MOVE_WORD_INSIDE_BACKWARD :: Key_Bind{Key{key = .B, shift = true}};
+CENTER_SCREEN             :: Key_Bind{Key{key = .Z}, Key{key = .Z}};
+GO_TO_BEGIN_LINE          :: Key_Bind{Key{key = .H, shift = true}};
+GO_TO_END_LINE            :: Key_Bind{Key{key = .L, shift = true}};
+GO_TO_BEGIN_FILE          :: Key_Bind{Key{key = .J, shift = true}};
+GO_TO_END_FILE            :: Key_Bind{Key{key = .K, shift = true}};
 
 NORMAL_GO_TO_INSERT                 :: Key_Bind{Key{key = .I}};
 NORMAL_REMOVE_RUNE                  :: Key_Bind{Key{key = .X}};
@@ -509,12 +562,14 @@ NORMAL_GO_TO_VISUAL                 :: Key_Bind{Key{key = .V}};
 NORMAL_GO_TO_INSERT_APPEND          :: Key_Bind{Key{key = .A}};
 NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW :: Key_Bind{Key{key = .O}};
 NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE  :: Key_Bind{Key{key = .O, shift = true}};
+NORMAL_PASTE                        :: Key_Bind{Key{key = .P}};
 
 INSERT_REMOVE_RUNE :: Key_Bind{Key{key = .BACKSPACE}};
 INSERT_NEW_LINE    :: Key_Bind{Key{key = .ENTER}};
 INSERT_TAB         :: Key_Bind{Key{key = .TAB}};
 
 VISUAL_DELETE           :: Key_Bind{Key{key = .D}};
+VISUAL_COPY             :: Key_Bind{Key{key = .Y}};
 VISUAL_DELETE_GO_INSERT :: Key_Bind{Key{key = .C}};
 
 BACK_TO_NORMAL :: Key_Bind{Key{key = .C, ctrl = true}};
