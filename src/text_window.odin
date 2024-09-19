@@ -1,4 +1,7 @@
 package main
+/*
+    Todo(Ferenc): Investigate problems when the buffer is empty
+*/
 
 import "core:c"
 import "core:mem"
@@ -12,6 +15,12 @@ import rl "vendor:raylib"
 
 import "src:Buffer"
 
+Text_Window_Mode :: enum{
+    Normal,
+    Insert,
+    Visual,
+}
+
 Text_Window :: struct{
     using window_data: Window_Data,
     
@@ -19,11 +28,7 @@ Text_Window :: struct{
     buffer: Buffer.Buffer,
     cursor: Buffer.Pos_Id,
     colors: [dynamic]Text_Window_Color,
-    mode: enum{
-        Normal,
-        Insert,
-        Visual,
-    },
+    mode: Text_Window_Mode,
     view_y: f32,
     visual: struct{
         anchor: Buffer.Pos_Id,
@@ -31,6 +36,9 @@ Text_Window :: struct{
 
         start: Buffer.Pos_Id,
         end:   Buffer.Pos_Id,
+    },
+    insert: struct{
+        old_buffer: Buffer.Buffer,
     },
     draw: struct{
         line_count: bool,
@@ -42,6 +50,7 @@ Text_Window :: struct{
         found_pos: int,
         found: bool,
     },
+    undo: [dynamic]Buffer.Buffer,
 }
 
 Text_Window_Color :: struct{
@@ -60,15 +69,13 @@ init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
     self.visual.end    = Buffer.new_pos(&self.buffer);
     self.draw.line_count  = true;
     self.draw.status_line = true;
-    path, ok := self.buffer.path.?;
-    if ok {
-        self.title = path;
-    } else {
-        self.title = "[EMPTY BUFFER]";
-    }
+    self.undo = make([dynamic]Buffer.Buffer, app.gpa);
+    sync_title(self);
 }
 
 update_text_window :: proc(self: ^Text_Window, app: ^App){
+    sync_title(self);
+
     color_scheme := app.settings.color_scheme;
     self.draw.text = Text_Style{
         font = app.settings.font.font,
@@ -78,7 +85,7 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
     };
 
     if match_key_bind(app, BACK_TO_NORMAL){
-        self.mode = .Normal;
+        go_to_mode(self, .Normal);
     }
 
     number := 1;
@@ -114,13 +121,9 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             for _ in 0..<number{ move_cursor_by_word_inside(self, .Backward); }
         }
         if match_key_bind(app, CENTER_SCREEN){
-            // Todo(Ferenc): This has a bug when wrongly renders and create crooked characters
-            // lol what the actual fuck
-
             line  := Buffer.get_line_number(self.buffer, self.cursor);
             pos_y := cast(f32) line * self.draw.text.size;
-            b := align_vertical(self.box, Box{{0, pos_y}, {0, self.draw.text.size}}, .Center, .Center);
-            self.view_y = b.pos.y;
+            self.view_y = math.floor(pos_y - self.box.size.y / 2);
             if self.view_y < 0 do self.view_y = 0;
         }       
         if match_key_bind(app, GO_TO_BEGIN_LINE){
@@ -149,24 +152,25 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             Buffer.save(&self.buffer, app.fa);
         }
 
-        if match_key_bind(app, NORMAL_GO_TO_INSERT){ go_to_insert_mode(self, app); }
+        if match_key_bind(app, NORMAL_GO_TO_INSERT){ go_to_insert_mode(self); }
         if match_key_bind(app, NORMAL_GO_TO_INSERT_APPEND){
             move_cursor(self, .Right);
-            go_to_insert_mode(self, app);
+            go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW){
             end := insert_new_line_below(self);
             Buffer.set_pos(&self.buffer, self.cursor, end + 1);
-            go_to_insert_mode(self, app);
+            go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE){
             begin := insert_new_line_above(self);
             Buffer.set_pos(&self.buffer, self.cursor, begin);
-            go_to_insert_mode(self, app);
+            go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_REMOVE_RUNE){
-            move_cursor(self, .Right);
-            Buffer.remove_rune_left(&self.buffer, self.cursor);
+            // Todo(Ferenc): Fix this, add wrap to move_cursor
+            //move_cursor(self, .Right);
+            //Buffer.remove_rune_left(&self.buffer, self.cursor);
         }
         if match_key_bind(app, NORMAL_GO_TO_VISUAL){
             go_to_visual_mode(self);
@@ -175,10 +179,66 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             go_to_visual_mode(self, true);
         }
         if match_key_bind(app, NORMAL_PASTE){
-            for r in app.copy_buffer{
-                Buffer.insert_rune(&self.buffer, self.cursor, r);
-            }
+            insert_range(self, app.copy_buffer[:]);
         }
+        if match_key_bind(app, NORMAL_UNDO){
+            undo(self);
+        }
+        if match_key_bind(app, NORMAL_REDO){
+            // Todo(Ferenc): support it
+            //redo(self); 
+        }
+
+        if match_key_bind(app, NORMAL_DELETE_WORLD_FORWARD){
+            delete_by_word(self, .Forward);
+        }
+        if match_key_bind(app, NORMAL_DELETE_WORLD_BACKWARD){
+            delete_by_word(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_DELETE_WORLD_INSIDE_FORWARD){
+            delete_by_word_inside(self, .Forward);
+        }
+        if match_key_bind(app, NORMAL_DELETE_WORLD_INSIDE_BACKWARD){
+            delete_by_word_inside(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_DELETE_RIGHT){
+            delete_by_cursor(self, .Right);
+        }
+        if match_key_bind(app, NORMAL_DELETE_LEFT){
+            delete_by_cursor(self, .Left);
+        }
+        if match_key_bind(app, NORMAL_DELETE_UNTIL_END_LINE){
+            delete_until_end_line(self);
+        }
+        if match_key_bind(app, NORMAL_DELETE_LINE){
+            delete_line(self);
+        }
+
+        if match_key_bind(app, NORMAL_CHANGE_WORLD_FORWARD){
+            change_by_word(self, .Forward);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_WORLD_BACKWARD){
+            change_by_word(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_WORLD_INSIDE_FORWARD){
+            change_by_word_inside(self, .Forward);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_WORLD_INSIDE_BACKWARD){
+            change_by_word_inside(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_RIGHT){
+            change_by_cursor(self, .Right);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_LEFT){
+            change_by_cursor(self, .Left);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_UNTIL_END_LINE){
+            change_until_end_line(self);
+        }
+        if match_key_bind(app, NORMAL_CHANGE_LINE){
+            change_line(self);
+        }
+
     case .Insert:
         if match_key_bind(app, INSERT_REMOVE_RUNE){
             Buffer.remove_rune_left(&self.buffer, self.cursor);
@@ -223,15 +283,14 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
 
         select_len := end - start + 1;
         if match_key_bind(app, VISUAL_DELETE){
-            Buffer.remove_range(&self.buffer, visual.start, select_len);
+            remove_range(self, visual.start, select_len);
         }
-        if match_key_bind(app, VISUAL_DELETE_GO_INSERT){
+        if match_key_bind(app, VISUAL_CHANGE){
             pos := Buffer.get_pos(self.buffer, visual.start);         
             Buffer.set_pos(&self.buffer, self.cursor, end + 1);
-            Buffer.remove_range_i(&self.buffer, pos, select_len);
-
-            go_to_insert_mode(self, app);
-       }
+            remove_range_i(self, pos, select_len);
+            go_to_insert_mode(self);
+        }
 
         if match_key_bind(app, VISUAL_COPY){
             clear(&app.copy_buffer);
@@ -428,8 +487,8 @@ insert_new_line_above :: proc(self: ^Text_Window) -> int{
     return begin;
 }
 
-Move_Curosr :: enum{Left, Right, Up, Down}
-move_cursor :: proc(self: ^Text_Window, direction: Move_Curosr) -> bool{
+Move_Cursor :: enum{Left, Right, Up, Down}
+move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor) -> bool{
     cursor_pos := Buffer.get_pos(self.buffer, self.cursor);
     move_left  := direction == .Left;
     move_right := direction == .Right;
@@ -479,12 +538,13 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Curosr) -> bool{
     return false;
 }
 
+
+
 destroy_text_window :: proc(self: ^Text_Window, app: ^App){
     Buffer.destroy(self.buffer);
     free(self, app.gpa);
     delete(self.colors);
 }
-
 
 text_window_to_window :: proc(self: ^Text_Window) -> Window{
     return generic_to_window(self, update_text_window, draw_text_window, destroy_text_window);
@@ -510,20 +570,38 @@ open_to_text_window :: proc(path: string, app: ^App) -> (Window_Id, bool){
     return id, true;
 }
 
-go_to_insert_mode :: proc(self: ^Text_Window, app: ^App){
-    self.mode = .Insert;
-    discard_next_rune(app);
+go_to_mode :: proc(self: ^Text_Window, mode: Text_Window_Mode){
+    leave_mode(self);
+    self.mode = mode;
+}
+
+go_to_insert_mode :: proc(self: ^Text_Window){
+    go_to_mode(self, .Insert);
+    discard_next_rune(self.app);
+    self.insert.old_buffer = Buffer.clone(self.buffer, self.app.gpa);
 }
 
 go_to_visual_mode :: proc(self: ^Text_Window, line := false){
-    self.mode = .Visual;
+    go_to_mode(self, .Visual);
     Buffer.set_pos_to_pos(&self.buffer, self.visual.anchor, self.cursor);
     self.visual.line = line;
 }
 
+leave_mode :: proc(self: ^Text_Window){
+    switch self.mode{
+    case .Normal:
+    case .Visual:
+    case .Insert:
+        if !Buffer.text_equal(self.insert.old_buffer, self.buffer){
+            push_undo(self, self.insert.old_buffer);
+        }
+        Buffer.destroy(self.insert.old_buffer);
+    }
+}
+
 Condition_Move :: enum{Forward, Backward}
 move_cursor_by_condition :: proc(self: ^Text_Window, dir: Condition_Move, check: proc(rune)->bool) -> bool{
-    kind := Move_Curosr.Right;
+    kind := Move_Cursor.Right;
     if dir == .Backward do kind = .Left
     moved := false;
 
@@ -618,6 +696,135 @@ find_next :: proc(self: ^Text_Window, dir: enum{Forward, Backward} = .Forward){
     }
 }
 
+remove_range :: proc(self: ^Text_Window, p: Buffer.Pos_Id, len: int){
+    if len == 0 do return;
+    push_undo(self, self.buffer);
+    Buffer.remove_range(&self.buffer, p, len);
+}
+
+remove_range_i :: proc(self: ^Text_Window, pos: int, len: int){
+    if len == 0 do return;
+    push_undo(self, self.buffer);
+    Buffer.remove_range_i(&self.buffer, pos, len);  
+}
+
+push_undo :: proc(self: ^Text_Window, b: Buffer.Buffer){
+    append(&self.undo, Buffer.clone(b, self.app.gpa));
+}
+
+undo :: proc(self: ^Text_Window){
+    if len(self.undo) == 0 do return;
+    b := self.undo[len(self.undo) - 1];
+    pop(&self.undo);
+
+    Buffer.destroy(self.buffer);
+    self.buffer = Buffer.clone(b, self.app.gpa);
+}
+
+delete_by_word :: proc(self: ^Text_Window, dir: Condition_Move){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor_by_word(self, dir);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    delete_between_positions(self, pos, new_pos);
+}
+
+delete_by_word_inside :: proc(self: ^Text_Window, dir: Condition_Move){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor_by_word_inside(self, dir);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    delete_between_positions(self, pos, new_pos);
+}
+
+delete_by_cursor :: proc(self: ^Text_Window, direction: Move_Cursor){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor(self, direction);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    delete_between_positions(self, pos, new_pos);
+}
+
+delete_by :: proc(self: ^Text_Window, move_proc: proc(^Text_Window)){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_proc(self);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    delete_between_positions(self, pos, new_pos);
+}
+
+delete_until_end_line :: proc(self: ^Text_Window){
+    delete_between_positions(self, 
+        Buffer.get_pos(self.buffer, self.cursor),
+        Buffer.find_line_end(self.buffer, self.cursor));
+}
+
+delete_line :: proc(self: ^Text_Window){
+    delete_between_positions(self, 
+        Buffer.find_line_begin(self.buffer, self.cursor),
+        Buffer.find_line_end(self.buffer, self.cursor) + 1);
+}
+
+delete_between_positions :: proc(self: ^Text_Window, p1, p2: int){
+    if p1 < p2{
+        len := p2 - p1;
+        remove_range_i(self, p1, len);
+    } else {
+        len := p1 - p2;
+        remove_range_i(self, p2, len);
+    }
+}
+
+change_by :: proc(self: ^Text_Window, move_proc: proc(^Text_Window)){
+    delete_by(self, move_proc);
+    go_to_insert_mode(self);
+}
+
+
+
+change_by_word :: proc(self: ^Text_Window, dir: Condition_Move){
+    delete_by_word(self, dir);
+    go_to_insert_mode(self);
+}
+
+change_by_word_inside :: proc(self: ^Text_Window, dir: Condition_Move){
+    delete_by_word_inside(self, dir);
+    go_to_insert_mode(self);
+}
+
+change_by_cursor :: proc(self: ^Text_Window, dir: Move_Cursor){
+    delete_by_cursor(self, dir);
+    go_to_insert_mode(self);
+}
+
+change_until_end_line :: proc(self: ^Text_Window){
+    delete_until_end_line(self);
+    go_to_insert_mode(self);
+}
+
+change_line :: proc(self: ^Text_Window){
+    delete_line(self);
+    go_to_insert_mode(self);
+}
+
+
+insert_range :: proc(self: ^Text_Window, array: []rune){
+    old_buffer := Buffer.clone(self.buffer, self.app.gpa);
+    defer Buffer.destroy(old_buffer);
+
+    for r in array{
+        Buffer.insert_rune(&self.buffer, self.cursor, r);
+    }
+    if !Buffer.text_equal(old_buffer, self.buffer){
+        push_undo(self, old_buffer); // Todo(Ferenc): make a push which does not copies for speed
+    }
+}
+
+sync_title :: proc(self: ^Text_Window){
+    path, ok := self.buffer.path.?;
+    if ok {
+        self.title = path;
+    } else {
+        self.title = "[EMPTY BUFFER]";
+    }
+}
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -636,6 +843,8 @@ GO_TO_END_FILE            :: Key_Bind{Key{key = .K, shift = true}};
 FIND_FORWARD              :: Key_Bind{Key{key = .N}};
 FIND_BACKWARD             :: Key_Bind{Key{key = .N, shift = true}};
 
+NORMAL_UNDO                         :: Key_Bind{Key{key = .U}};
+NORMAL_REDO                         :: Key_Bind{Key{key = .U, shift = true}};
 NORMAL_GO_TO_INSERT                 :: Key_Bind{Key{key = .I}};
 NORMAL_REMOVE_RUNE                  :: Key_Bind{Key{key = .X}};
 NORMAL_GO_TO_VISUAL                 :: Key_Bind{Key{key = .V}};
@@ -645,12 +854,30 @@ NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW :: Key_Bind{Key{key = .O}};
 NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE  :: Key_Bind{Key{key = .O, shift = true}};
 NORMAL_PASTE                        :: Key_Bind{Key{key = .P}};
 
+NORMAL_DELETE_WORLD_FORWARD         :: Key_Bind{Key{key = .D}, {key = .W}};
+NORMAL_DELETE_WORLD_BACKWARD        :: Key_Bind{Key{key = .D}, {key = .B}};
+NORMAL_DELETE_WORLD_INSIDE_FORWARD  :: Key_Bind{Key{key = .D}, {key = .W, shift = true}};
+NORMAL_DELETE_WORLD_INSIDE_BACKWARD :: Key_Bind{Key{key = .D}, {key = .B, shift = true}};
+NORMAL_DELETE_RIGHT                 :: Key_Bind{Key{key = .D}, {key = .L}};
+NORMAL_DELETE_LEFT                  :: Key_Bind{Key{key = .D}, {key = .H}};
+NORMAL_DELETE_UNTIL_END_LINE        :: Key_Bind{Key{key = .D, shift = true}};
+NORMAL_DELETE_LINE                  :: Key_Bind{Key{key = .D}, {key = .D}};
+
+NORMAL_CHANGE_WORLD_FORWARD         :: Key_Bind{Key{key = .C}, {key = .W}};
+NORMAL_CHANGE_WORLD_BACKWARD        :: Key_Bind{Key{key = .C}, {key = .B}};
+NORMAL_CHANGE_WORLD_INSIDE_FORWARD  :: Key_Bind{Key{key = .C}, {key = .W, shift = true}};
+NORMAL_CHANGE_WORLD_INSIDE_BACKWARD :: Key_Bind{Key{key = .C}, {key = .B, shift = true}};
+NORMAL_CHANGE_RIGHT                 :: Key_Bind{Key{key = .C}, {key = .L}};
+NORMAL_CHANGE_LEFT                  :: Key_Bind{Key{key = .C}, {key = .H}};
+NORMAL_CHANGE_UNTIL_END_LINE        :: Key_Bind{Key{key = .C, shift = true}};
+NORMAL_CHANGE_LINE                  :: Key_Bind{Key{key = .C}, {key = .C}};
+
 INSERT_REMOVE_RUNE :: Key_Bind{Key{key = .BACKSPACE}};
 INSERT_NEW_LINE    :: Key_Bind{Key{key = .ENTER}};
 INSERT_TAB         :: Key_Bind{Key{key = .TAB}};
 
-VISUAL_DELETE           :: Key_Bind{Key{key = .D}};
-VISUAL_COPY             :: Key_Bind{Key{key = .Y}};
-VISUAL_DELETE_GO_INSERT :: Key_Bind{Key{key = .C}};
+VISUAL_DELETE :: Key_Bind{Key{key = .D}};
+VISUAL_COPY   :: Key_Bind{Key{key = .Y}};
+VISUAL_CHANGE :: Key_Bind{Key{key = .C}};
 
 BACK_TO_NORMAL :: Key_Bind{Key{key = .C, ctrl = true}};

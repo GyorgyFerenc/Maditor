@@ -5,6 +5,7 @@ import "core:fmt"
 import "core:os"
 import s "core:strings"
 import "core:unicode/utf8"
+import "base:builtin"
 
 // They remain consistent after inserts and deletes
 Pos_Id :: distinct int; 
@@ -31,6 +32,18 @@ destroy :: proc(b: Buffer) {
     if ok do delete(p, b.allocator);
     delete(b.runes);
     delete(b.positions);
+}
+
+clone :: proc(b: Buffer, allocator: mem.Allocator) -> Buffer{
+    new_b := Buffer{};
+    new_b.allocator = allocator;
+    p, ok := b.path.?;
+    if ok {
+        set_path(&new_b, p);
+    }
+    new_b.runes =     clone_dyn_array(b.runes, allocator);
+    new_b.positions = clone_dyn_array(b.positions, allocator);
+    return new_b;
 }
 
 // clones the path
@@ -90,6 +103,7 @@ delete_pos :: proc(b: ^Buffer){
 }
 
 set_pos :: proc(b: ^Buffer, p: Pos_Id, value: int){
+    if value < 0 || value >= length(b^) do return;
     b.positions[p] = value;
 }
 
@@ -169,7 +183,9 @@ insert_rune_i :: proc(b: ^Buffer, pos: int, r: rune){
 
     for &position in b.positions{
         if position >= pos{
-            position += 1;
+            if position + 1 < length(b^){
+                position += 1;
+            }
         }
     }
 
@@ -185,7 +201,10 @@ remove_rune_i :: proc(b: ^Buffer, pos: int){
 
     for &position in b.positions{
         if position >= pos{
-            position -= 1;
+            if position - 1 >= 0{
+                position -= 1;
+            }
+
         }
     }
 
@@ -312,3 +331,27 @@ next :: proc(it: ^Iter) -> (rune, int, bool){
 
     return r, idx, true;
 }
+
+text_equal :: proc(b1, b2: Buffer) -> bool{
+    if length(b1) != length(b2) do return false;
+
+    it := iter(b1);
+    for r, idx in next(&it){
+        if r != get_rune_i(b2, idx){
+            return false;
+        }
+    }
+
+    return true;
+}
+
+
+clone_dyn_array :: proc(array: $T, allocator: mem.Allocator) -> T{
+    new_array := make(T, len(array), len(array), allocator = allocator);
+    for el, i in array{
+        new_array[i] = el;
+    }
+    return new_array;
+}
+
+

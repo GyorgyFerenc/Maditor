@@ -29,10 +29,10 @@ Settings :: struct{
 init_settings :: proc(s: ^Settings, app: ^App){
     s.window.size        = {1080, 720};
     s.window.fullscreen  = false;
-    s.key_binds.max_wait = 1000 / 4; 
+    s.key_binds.max_wait = 1000; 
     s.color_scheme       = DEFAULT_COLOR_SCHEME;
 
-    s.font.size = 20;
+    s.font.size = 25;
     s.font.path = "font/InconsolataNerdFont-Regular.ttf";
 
     s.tab_size = 4;

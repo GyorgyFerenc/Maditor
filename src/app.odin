@@ -137,6 +137,8 @@ update_key_binds :: proc(app: ^App){
 }
 
 match_key_bind :: proc(app: ^App, key_bind: Key_Bind, number: ^int = nil) -> bool{
+    // Todo(Ferenc): Move number out to another procedure
+
     if len(key_bind) != app.key_binds.len {
         return false;
     }
