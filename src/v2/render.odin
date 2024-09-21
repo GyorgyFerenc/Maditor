@@ -1,11 +1,14 @@
-package main
+package v2
 
 import "core:c"
 import "core:mem"
+import "core:math"
 import "core:unicode/utf8"
 import s "core:strings"
 
 import rl "vendor:raylib"
+
+v2 :: [2]f32;
 
 Box :: struct{
     pos:  v2,
@@ -17,6 +20,22 @@ Box_Side :: enum{
     Right,
     Top,
     Bottom,
+}
+
+Vertical_Align :: enum{
+    Top,
+    Center,
+    Bottom,
+}
+
+Horizontal_Align :: enum{
+    Left,
+    Center,
+    Right,
+}
+
+Draw_Context :: struct{
+    box: Box,
 }
 
 add_margin :: proc(r: Box, margin: f32) -> Box{
@@ -95,19 +114,6 @@ remove_padding_side :: proc(r: Box, padding: f32, side: Box_Side) -> (result: Bo
     return;
 }
 
-begin_box_draw_mode :: proc(b: Box){
-    rl.BeginScissorMode(
-        cast(c.int) b.pos.x,
-        cast(c.int) b.pos.y,
-        cast(c.int) b.size.x,
-        cast(c.int) b.size.y,
-    );
-}
-
-end_box_draw_mode :: proc(){
-    rl.EndScissorMode();
-}
-
 box_to_rl_rectangle :: proc(b: Box) -> rl.Rectangle{
     return {
         b.pos.x,
@@ -117,26 +123,14 @@ box_to_rl_rectangle :: proc(b: Box) -> rl.Rectangle{
     }
 }
 
-draw_box :: proc(b: Box, c: rl.Color){
-    rl.DrawRectangleV(b.pos, b.size, c);
+rl_rectangle_to_box :: proc(rect: rl.Rectangle) -> Box{
+    return {
+        pos = {cast(f32) rect.x, cast(f32) rect.y},
+        size = {cast(f32) rect.width, cast(f32) rect.height},
+    }
 }
 
-draw_box_outline :: proc(b: Box, thickness: f32, c: rl.Color){
-    rl.DrawRectangleLinesEx(box_to_rl_rectangle(b), thickness, c);
-}
 
-Text_Style :: struct{
-    font: rl.Font,
-    size: f32,
-    spacing: f32,
-    color: rl.Color,
-}
-
-Vertical_Align :: enum{
-    Top,
-    Center,
-    Bottom,
-}
 align_vertical :: proc(b: Box, to: Box, b_align: Vertical_Align, to_align: Vertical_Align) -> Box{
     result := b;
     switch to_align{
@@ -162,11 +156,6 @@ align_vertical :: proc(b: Box, to: Box, b_align: Vertical_Align, to_align: Verti
     return result;
 }
 
-Horizontal_Align :: enum{
-    Left,
-    Center,
-    Right,
-}
 align_horizontal :: proc(b: Box, to: Box, b_align: Horizontal_Align, to_align: Horizontal_Align) -> Box{
     result := b;
     switch to_align{
@@ -192,28 +181,85 @@ align_horizontal :: proc(b: Box, to: Box, b_align: Horizontal_Align, to_align: H
     return result;
 }
 
+fill :: proc(ctx: Draw_Context, color: rl.Color){
+    draw_box(ctx, ctx.box, color);
+}
 
-// Todo(Ferenc): do a custom draw text
+draw_box :: proc(ctx: Draw_Context, b: Box, color: rl.Color){
+    rl.BeginScissorMode(
+        cast(c.int) ctx.box.pos.x,
+        cast(c.int) ctx.box.pos.y,
+        cast(c.int) ctx.box.size.x,
+        cast(c.int) ctx.box.size.y,
+    );
+    defer rl.EndScissorMode();
 
-// This is janky do better lol
-measure_rune_size :: proc(r: rune, style: Text_Style) -> v2{
-    str: [5]u8;
-    encoded, size := utf8.encode_rune(r);
-    for i in 0..<size{
-        str[i] = encoded[i];
+    rl.DrawRectangleV(ctx.box.pos + b.pos, b.size, color);
+}
+
+draw_box_outline :: proc(ctx: Draw_Context, b: Box, thickness: f32, color: rl.Color){
+    rl.BeginScissorMode(
+        cast(c.int) ctx.box.pos.x,
+        cast(c.int) ctx.box.pos.y,
+        cast(c.int) ctx.box.size.x,
+        cast(c.int) ctx.box.size.y,
+    );
+    defer rl.EndScissorMode();
+
+    b := b;
+    b.pos += ctx.box.pos;
+    rl.DrawRectangleLinesEx(box_to_rl_rectangle(b), thickness, color);
+}
+
+measure_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos := v2{}) -> Box{
+    info := rl.GetGlyphInfo(font, r);
+    rect := rl.GetGlyphAtlasRec(font, r);
+    ratio := size / cast(f32) font.baseSize;
+    b := rl_rectangle_to_box(rect);
+    b.pos = 0;
+    b.size *= ratio;
+    //b.pos += pos;
+    b.pos.x += cast(f32) info.offsetX * ratio;
+    b.pos.y += cast(f32) info.offsetY * ratio;
+    return b;
+}
+
+draw_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos: v2, color: rl.Color){
+    rl.BeginScissorMode(
+        cast(c.int) ctx.box.pos.x,
+        cast(c.int) ctx.box.pos.y,
+        cast(c.int) ctx.box.size.x,
+        cast(c.int) ctx.box.size.y,
+    );
+    defer rl.EndScissorMode();
+    rl.DrawTextCodepoint(font, r, ctx.box.pos + pos, size, color);
+}
+
+draw_text :: proc(
+    ctx: Draw_Context, 
+    text: string, 
+    font: rl.Font, 
+    size: f32, 
+    pos: v2, 
+    color: rl.Color,
+    hspacing: f32 = 0, 
+    vspacing: f32 = 0, 
+    tab_size: f32 = 40,
+    wrap: Maybe(f32) = nil,
+){
+    rune_position := v2{};
+    w, has_wrap := wrap.?;
+
+    for r in text{
     }
-
-    ptr := transmute(cstring) &str;
-    return rl.MeasureTextEx(style.font, ptr, style.size, style.spacing);
-
-    //    let scale = size / cast(f32) font.baseSize;
-    //    let rect = GetGlyphAtlasRec(font, rune);
-    //    return rect.width * scale;
 }
 
-measure_text :: proc(str: string, style: Text_Style, fa: mem.Allocator) -> v2{
-    cstr := s.clone_to_cstring(str, fa);
-    return rl.MeasureTextEx(style.font, cstr, style.size, style.spacing);
+Draw_Text_Feeder :: struct{
+    rune_position: v2,
+    idx: int,
+    box: Box,
+    dont_draw: bool,
 }
 
-
+feed_rune :: proc(self: ^Draw_Text_Feeder, r: rune){
+}

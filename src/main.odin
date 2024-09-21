@@ -3,12 +3,14 @@ package main
 import "core:fmt"
 import "core:mem"
 import "core:time"
+import "core:math"
 import "core:os"
 
 import rl "vendor:raylib"
 
 import "src:Buffer"
 import "src:Pool_Array"
+import "src:v2"
 
 
 main :: proc(){
@@ -24,9 +26,6 @@ main :: proc(){
     app: App;
     init(&app);
 
-    open_to_text_window("test.temp", &app);
-    //debug_settings(&app);
-
     start := time.now();
     for app.running{
         end := time.now();
@@ -40,11 +39,32 @@ main :: proc(){
         rl.BeginDrawing();
             rl.ClearBackground(rl.BLACK);
             
-            update(&app);
+            //update(&app);
+            test(&app);
 
         rl.EndDrawing();
     }
 }
 
-debug_settings :: proc(app: ^App){
+test :: proc(app: ^App){
+    ctx := v2.Draw_Context{};
+    ctx.box = v2.Box{
+        pos = {0, 0},
+        size = {1080, 720},
+    };
+    
+    //v2.fill(ctx, rl.GRAY);
+    settings := app.settings;
+    font := settings.font.font;
+    w: f32 = 100;
+    v2.draw_box(ctx, {{100, 100}, {w, 200}}, rl.RED);
+    v2.draw_text(ctx, "asd \tasd ad  asd asd asd ", 
+        font = font, 
+        size = 25, 
+        pos = {100, 100},
+        color = rl.WHITE,
+        wrap = w,
+        tab_size = 100,
+    );
 }
+

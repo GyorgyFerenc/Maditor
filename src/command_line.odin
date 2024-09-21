@@ -38,7 +38,9 @@ update_command_line :: proc(self: ^Command_Line, app: ^App){
     }
 
     for {
-        if match_key_bind(app, {{key = .BACKSPACE}}){
+        if match_key_bind(app, {{key = .BACKSPACE}}) || 
+           match_key_bind(app, {{key = .BACKSPACE, shift = true}}){
+
             s.pop_rune(&self.builder);
         }
         if match_key_bind(app, {{key = .ENTER}}){
@@ -209,6 +211,8 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
             set_response(self, "needs a path to a directory");
             return;
         }
+        recursive, ok2 := get_atomic(sexpr, 2, p.Boolean);
+        if !ok2 { recursive = false; }
 
         context.temp_allocator = app.fa;
         if !os.is_dir(path) {
@@ -216,27 +220,38 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
             return;
         }
 
-        hd, err := os.open(path, os.O_RDONLY);
-        if err != os.ERROR_NONE{
-            set_response(self, "Could not open folder");
-            return;
-        }
 
-        context.allocator = app.fa;
-        fi, err2 := os.read_dir(hd, 0, app.gpa);
-        if err2 != os.ERROR_NONE{
-            set_response(self, "Could not read folder");
-            return;
-        }
-        for info in fi{
-            if info.is_dir do continue;
-            builder := s.builder_make(app.fa);
-            s.write_string(&builder, path);
-            s.write_string(&builder, "/");
-            s.write_string(&builder, info.name);
-            name := s.to_string(builder);
-            open_to_text_window(name, app);
-        }
+        open_files(self, path, recursive, app);
+
+        open_files :: proc(self: ^Command_Line, path: string, recursive: bool, app: ^App){
+            hd, err := os.open(path, os.O_RDONLY);
+            if err != os.ERROR_NONE{
+                set_response(self, "Could not open folder");
+                return;
+            }
+            defer os.close(hd);
+
+            context.allocator = app.fa;
+            fi, err2 := os.read_dir(hd, 0, app.gpa);
+            if err2 != os.ERROR_NONE{
+                set_response(self, "Could not read folder");
+                return;
+            }
+            for info in fi{
+                builder := s.builder_make(app.fa);
+                s.write_string(&builder, path);
+                s.write_string(&builder, "/");
+                s.write_string(&builder, info.name);
+                name := s.to_string(builder);
+                if info.is_dir {
+                    if recursive {
+                        open_files(self, name, recursive, app);
+                    }
+                } else {
+                    open_to_text_window(name, app);
+                }
+            }
+        } 
     case "jump", "j":
         line, ok := get_atomic(sexpr, 1, p.Integer);
         if !ok {

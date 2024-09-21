@@ -10,6 +10,7 @@ import "core:unicode/utf8"
 import "core:unicode"
 import s "core:strings"
 import "core:math"
+import "core:slice"
 
 import rl "vendor:raylib"
 
@@ -240,7 +241,8 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
 
     case .Insert:
-        if match_key_bind(app, INSERT_REMOVE_RUNE){
+        if match_key_bind(app, INSERT_REMOVE_RUNE) ||
+           match_key_bind(app, INSERT_REMOVE_RUNE2) {
             Buffer.remove_rune_left(&self.buffer, self.cursor);
         }
         if match_key_bind(app, INSERT_NEW_LINE){
@@ -305,6 +307,10 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
 draw_text_window :: proc(self: ^Text_Window, app: ^App){
     defer clear(&self.colors);
 
+    slice.sort_by(self.colors[:], proc(a, b: Text_Window_Color) -> bool{
+        return a.pos < b.pos;
+    });    
+
     color_scheme := app.settings.color_scheme;
     style := self.draw.text; 
 
@@ -367,12 +373,15 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
                 s.write_int(&builder, line_count - cursor_line);
             }
             line_cstr := s.to_cstring(&builder);
-            rl.DrawTextEx(style.font, line_cstr, to_view_pos(self, line_count_pos), style.size, style.spacing, rl.WHITE);
+            rl.DrawTextEx(style.font, line_cstr, to_view_pos(self, line_count_pos), style.size, style.spacing, color_scheme.text);
         }
 
         if color_index < len(self.colors){
             if self.colors[color_index].pos == idx{
                 color_window = self.colors[color_index];
+                color_index += 1;
+            }
+            for color_index < len(self.colors) && self.colors[color_index].pos <= idx{
                 color_index += 1;
             }
         }
@@ -825,6 +834,10 @@ sync_title :: proc(self: ^Text_Window){
     }
 }
 
+add_color :: proc(self: ^Text_Window, color: Text_Window_Color){
+    append(&self.colors, color);
+}
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -838,8 +851,8 @@ MOVE_WORD_INSIDE_BACKWARD :: Key_Bind{Key{key = .B, shift = true}};
 CENTER_SCREEN             :: Key_Bind{Key{key = .Z}, Key{key = .Z}};
 GO_TO_BEGIN_LINE          :: Key_Bind{Key{key = .H, shift = true}};
 GO_TO_END_LINE            :: Key_Bind{Key{key = .L, shift = true}};
-GO_TO_BEGIN_FILE          :: Key_Bind{Key{key = .J, shift = true}};
-GO_TO_END_FILE            :: Key_Bind{Key{key = .K, shift = true}};
+GO_TO_BEGIN_FILE          :: Key_Bind{Key{key = .K, shift = true}};
+GO_TO_END_FILE            :: Key_Bind{Key{key = .J, shift = true}};
 FIND_FORWARD              :: Key_Bind{Key{key = .N}};
 FIND_BACKWARD             :: Key_Bind{Key{key = .N, shift = true}};
 
@@ -872,9 +885,10 @@ NORMAL_CHANGE_LEFT                  :: Key_Bind{Key{key = .C}, {key = .H}};
 NORMAL_CHANGE_UNTIL_END_LINE        :: Key_Bind{Key{key = .C, shift = true}};
 NORMAL_CHANGE_LINE                  :: Key_Bind{Key{key = .C}, {key = .C}};
 
-INSERT_REMOVE_RUNE :: Key_Bind{Key{key = .BACKSPACE}};
-INSERT_NEW_LINE    :: Key_Bind{Key{key = .ENTER}};
-INSERT_TAB         :: Key_Bind{Key{key = .TAB}};
+INSERT_REMOVE_RUNE  :: Key_Bind{Key{key = .BACKSPACE}};
+INSERT_REMOVE_RUNE2 :: Key_Bind{Key{key = .BACKSPACE, shift = true}};
+INSERT_NEW_LINE     :: Key_Bind{Key{key = .ENTER}};
+INSERT_TAB          :: Key_Bind{Key{key = .TAB}};
 
 VISUAL_DELETE :: Key_Bind{Key{key = .D}};
 VISUAL_COPY   :: Key_Bind{Key{key = .Y}};

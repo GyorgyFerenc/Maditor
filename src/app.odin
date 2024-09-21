@@ -40,6 +40,10 @@ App :: struct{
         cmd: Command_Line,
     },
 
+    plugins: struct{
+        odin_plugin: Odin_Plugin,
+    },
+
     // Do not touch
     arena: mem.Arena, // The memory must be alive for the whole program but do not need the actual variable
 }
@@ -62,6 +66,7 @@ init :: proc(app: ^App){
     reset_keybinds(app);
 
     init_command_line(&app.ui.cmd, app.gpa);
+    init_odin_plugin(&app.plugins.odin_plugin, app);
 }
 
 update :: proc(app: ^App){
@@ -71,6 +76,8 @@ update :: proc(app: ^App){
 
     ui := &app.ui;
     update_command_line(&ui.cmd, app);
+
+    update_odin_plugin(&app.plugins.odin_plugin, app);
 
     window, ok := get_window(app, ui.active_window);
     if ok {

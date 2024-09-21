@@ -29,7 +29,7 @@ Settings :: struct{
 init_settings :: proc(s: ^Settings, app: ^App){
     s.window.size        = {1080, 720};
     s.window.fullscreen  = false;
-    s.key_binds.max_wait = 1000; 
+    s.key_binds.max_wait = 1000 / 4; 
     s.color_scheme       = DEFAULT_COLOR_SCHEME;
 
     s.font.size = 25;
@@ -109,14 +109,18 @@ Color_Scheme :: struct{
     enum_member: rl.Color,
     type:        rl.Color,
     constant:    rl.Color,
-    str:         rl.Color,
+    string:      rl.Color,
     number:      rl.Color,
     operator:    rl.Color,
     separator:   rl.Color,
     punctuation: rl.Color,
+    procedure:   rl.Color,
+    comment:     rl.Color,
 }
 
+//DEFAULT_COLOR_SCHEME  :: ONE_DARK_COLOR_SCHEME;
 DEFAULT_COLOR_SCHEME  :: CONTRAST_COLOR_SCHEME;
+
 
 CONTRAST_COLOR_SCHEME :: Color_Scheme{
     gray =   rl.GRAY,
@@ -145,63 +149,73 @@ CONTRAST_COLOR_SCHEME :: Color_Scheme{
     note =    rl.GRAY,
 
     keyword =     rl.PURPLE,
-    identifier =  rl.RED,
+    identifier =  rl.WHITE,
     variable =    rl.RED,
     parameter =   rl.RED,
     field =       rl.RED,
     enum_member = rl.ORANGE,
     type =        rl.GREEN,
     constant =    rl.ORANGE,
-    str =         rl.GREEN,
+    string =      rl.GREEN,
     number =      rl.YELLOW,
     operator =    rl.WHITE,
     separator =   rl.WHITE,
     punctuation = rl.WHITE,
+    procedure   = rl.BLUE,
+    comment     = rl.GRAY,
+
 }
 
-ONE_DARK_RED   :: rl.Color{0xE0, 0x6C, 0x75, 0xFF};
-ONE_DARK_GREEN :: rl.Color{0xE0, 0x6C, 0x75, 0xFF};
-ONE_DARK_WHITE :: rl.Color{0xAA, 0xB2, 0xBF, 0xFF};
+ONE_DARK_RED    :: rl.Color{0xE0, 0x6C, 0x75, 0xFF};
+ONE_DARK_GREEN  :: rl.Color{0x98, 0xC3, 0x79, 0xFF};
+ONE_DARK_BLUE   :: rl.Color{0x62, 0xAF, 0xEE, 0xFF};
+//ONE_DARK_WHITE  :: rl.Color{0xAA, 0xB2, 0xBF, 0xFF};
+ONE_DARK_WHITE  :: rl.Color{0xBA, 0xC2, 0xCF, 0xFF};
+ONE_DARK_PURPLE :: rl.Color{0xC6, 0x78, 0xDD, 0xFF};
+ONE_DARK_ORANGE :: rl.Color{0xD1, 0x9A, 0x66, 0xFF};
+ONE_DARK_YELLOW :: rl.Color{0xD6, 0xB9, 0x6F, 0xFF};
 
 // Todo(Ferenc): Do the rest
 ONE_DARK_COLOR_SCHEME :: Color_Scheme{
-    gray =   rl.GRAY,
-    red =    ONE_DARK_RED,
-    green =  ONE_DARK_GREEN,
-    blue =   rl.BLUE,
-    yellow = rl.YELLOW,
+    gray   = rl.GRAY,
+    red    = ONE_DARK_RED,
+    green  = ONE_DARK_GREEN,
+    blue   = ONE_DARK_BLUE, 
+    yellow = ONE_DARK_YELLOW,
     orange = rl.ORANGE,
-    pink =   rl.PINK,
-    purple = rl.PURPLE,
-    brown =  rl.BROWN,
-    white =  ONE_DARK_WHITE,
-    black =  rl.BLACK,
+    pink   = rl.PINK,
+    purple = ONE_DARK_PURPLE, 
+    brown  = rl.BROWN,
+    white  = ONE_DARK_WHITE,
+    black  = rl.BLACK,
 
     background1 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
     background2 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
     background3 = rl.Color{0x28, 0x2c, 0x34, 0xFF},
 
-    foreground1 = rl.WHITE,
+    foreground1 = ONE_DARK_WHITE, 
     foreground2 = rl.Color{0xEE, 0xEE, 0xEE, 255 },
     foreground3 = rl.Color{0xDD, 0xDD, 0xDD, 255 },
 
     text =    ONE_DARK_WHITE,
     error =   ONE_DARK_RED,
-    warning = rl.YELLOW,
+    warning = ONE_DARK_YELLOW,
     note =    rl.GRAY,
 
-    keyword =     rl.PURPLE,
+    keyword =     ONE_DARK_PURPLE, 
     identifier =  ONE_DARK_RED,
     variable =    ONE_DARK_RED,
     parameter =   ONE_DARK_RED,
     field =       ONE_DARK_RED,
-    enum_member = rl.ORANGE,
-    type =        rl.GREEN,
-    constant =    rl.ORANGE,
-    str =         rl.GREEN,
-    number =      rl.YELLOW,
-    operator =    rl.WHITE,
-    separator =   rl.WHITE,
-    punctuation = rl.WHITE,
+    enum_member = ONE_DARK_ORANGE, 
+    type =        ONE_DARK_YELLOW,
+    constant =    ONE_DARK_ORANGE, 
+    string =      ONE_DARK_GREEN, 
+    number =      ONE_DARK_YELLOW,
+    operator =    ONE_DARK_WHITE, 
+    separator =   ONE_DARK_WHITE, 
+    punctuation = ONE_DARK_WHITE, 
+    procedure   = ONE_DARK_BLUE,
+    comment     = rl.GRAY,
 }
 
