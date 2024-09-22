@@ -218,7 +218,7 @@ measure_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos :
     b := rl_rectangle_to_box(rect);
     b.pos = 0;
     b.size *= ratio;
-    //b.pos += pos;
+    b.pos += pos;
     b.pos.x += cast(f32) info.offsetX * ratio;
     b.pos.y += cast(f32) info.offsetY * ratio;
     return b;
@@ -246,20 +246,133 @@ draw_text :: proc(
     vspacing: f32 = 0, 
     tab_size: f32 = 40,
     wrap: Maybe(f32) = nil,
+    colors: []Draw_Text_Color_Window = {},
 ){
-    rune_position := v2{};
-    w, has_wrap := wrap.?;
+    feeder := Draw_Text_Feeder{
+        ctx  = ctx,
+        text = text,
+        font = font,
+        size = size,
+        pos  = pos,
+        color    = color,
+        hspacing = hspacing,
+        vspacing = vspacing,
+        tab_size = tab_size,
+        wrap     = wrap,
+        colors   = colors,
+    };
 
     for r in text{
+        feed_rune(&feeder, r);
     }
 }
 
+measure_text :: proc(
+    ctx: Draw_Context, 
+    text: string, 
+    font: rl.Font, 
+    size: f32, 
+    pos: v2, 
+    hspacing: f32 = 0, 
+    vspacing: f32 = 0, 
+    tab_size: f32 = 40,
+    wrap: Maybe(f32) = nil,
+) -> Box{
+    feeder := Draw_Text_Feeder{
+        ctx  = ctx,
+        text = text,
+        font = font,
+        size = size,
+        pos  = pos,
+        hspacing = hspacing,
+        vspacing = vspacing,
+        tab_size = tab_size,
+        wrap     = wrap,
+
+        dont_draw = true,
+    };
+
+    for r in text{
+        feed_rune(&feeder, r);
+    }
+
+    return feeder.bounding_box;
+}
+
+Draw_Text_Color_Window :: struct{
+    pos: int,
+    len: int,
+    color: rl.Color,
+}
+
 Draw_Text_Feeder :: struct{
+    ctx: Draw_Context, 
+    text: string, 
+    font: rl.Font, 
+    size: f32, 
+    pos: v2, 
+    color: rl.Color,
+    hspacing: f32,
+    vspacing: f32,
+    tab_size: f32,
+    wrap: Maybe(f32),
+    colors: []Draw_Text_Color_Window,
+    
+    color_idx: int,
     rune_position: v2,
-    idx: int,
-    box: Box,
     dont_draw: bool,
+
+    line: int,  // starts from 0
+    count: int,
+    idx: int,
+    bounding_box: Box,
 }
 
 feed_rune :: proc(self: ^Draw_Text_Feeder, r: rune){
+    self.count += 1;
+    self.idx = self.count - 1;
+
+    w, has_wrap := self.wrap.?;
+    r_box := measure_rune(self.ctx, r, self.size, self.font);
+    color := self.color; 
+    
+    if self.color_idx < len(self.colors){
+        window := self.colors[self.color_idx];
+        if window.pos <= self.idx && self.idx < window.pos + window.len{
+            color = window.color;
+        } else{
+            for self.color_idx < len(self.colors) && self.colors[self.color_idx].pos < self.idx{
+                self.color_idx += 1;
+            }
+        }
+    }
+ 
+    if r == '\n'{
+        self.line += 1;
+        self.rune_position.y += self.size + self.vspacing;
+        self.rune_position.x = 0;
+    }else if r == '\t'{
+        a := math.floor(self.rune_position.x / self.tab_size + 1);
+        if has_wrap && a * self.tab_size > w{
+            self.rune_position.x = 0;
+            self.rune_position.y += self.size + self.vspacing;
+        } else {
+            self.rune_position.x = a * self.tab_size;
+        }
+    } else {
+        if has_wrap && self.rune_position.x + r_box.size.x > w{
+            self.rune_position.x = 0;
+            self.rune_position.y += self.size + self.vspacing;
+        }
+        if !self.dont_draw {
+            draw_rune(self.ctx, r, self.size, self.font, self.pos + self.rune_position, color);
+        }
+        self.rune_position.x += r_box.pos.x + r_box.size.x + self.hspacing;
+    }
+
+    self.bounding_box.pos = self.pos;
+    if self.rune_position.x > self.bounding_box.size.x{
+        self.bounding_box.size.x = self.rune_position.x;
+    }
+    self.bounding_box.size.y = self.rune_position.y + self.size;
 }
