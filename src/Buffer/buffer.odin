@@ -14,7 +14,7 @@ Buffer :: struct{
     path:      Maybe(string),
     runes:     [dynamic]rune,
     positions: [dynamic]int,
-    dirty:     bool,
+    dirty:     bool, // Todo(Ferenc): make a procedure and check with the file on disk
     allocator: mem.Allocator,
 }
 

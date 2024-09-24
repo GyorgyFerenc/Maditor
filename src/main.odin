@@ -26,6 +26,8 @@ main :: proc(){
     app: App;
     init(&app);
 
+    open_to_text_window("test.temp", &app);
+
     start := time.now();
     for app.running{
         end := time.now();
@@ -39,13 +41,15 @@ main :: proc(){
         rl.BeginDrawing();
             rl.ClearBackground(rl.BLACK);
             
-            //update(&app);
-            test(&app);
+            update(&app);
+            //test(&app);
 
+            if app.draw_fps do rl.DrawFPS(0, 0);
         rl.EndDrawing();
     }
 }
 
 test :: proc(app: ^App){
+    ctx := Draw_Context{{{0.31,.94}, {1080, 720}}};
 }
 

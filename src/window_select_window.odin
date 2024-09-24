@@ -2,7 +2,6 @@ package main
 
 import "core:math"
 import s "core:strings"
-import "core:fmt"
 
 import rl "vendor:raylib"
 
@@ -20,6 +19,7 @@ Window_Select_Window :: struct{
 
 init_window_select :: proc(self: ^Window_Select_Window, app: ^App){
     self.title = "Window Select";
+    a: int;
 }
 
 open_window_select :: proc(app: ^App){
@@ -109,48 +109,67 @@ draw_window_select :: proc(self: ^Window_Select_Window, app: ^App){
     if self.len == 0 do return;
 
     color_scheme := app.settings.color_scheme;
-    box := self.box;
-    begin_box_draw_mode(box);
-    defer end_box_draw_mode();
-    draw_box(box, color_scheme.background1);
+    ctx := Draw_Context{self.box};
+    fill(ctx, color_scheme.background1);
 
-    style := Text_Style{
-        font    = app.settings.font.font,
-        size    = app.settings.font.size,
-        spacing = 1,
-        color   = color_scheme.text,
-    };
-
-    screen := to_v2(app.settings.window.size);
-    box_width:   f32 = screen.x / f32(self.width + 1);
-    box_height:  f32 = screen.y / f32(self.heigth + 1);
+    box_width:   f32 = self.box.size.x / f32(self.width + 1);
+    box_height:  f32 = self.box.size.y / f32(self.heigth + 1);
     horizontal_spacing: f32 = box_width /  cast(f32) self.width;
     vertical_spacing: f32   = box_height / cast(f32) self.heigth;
-    current_box := Box{box.pos, {box_width, box_height}};
-    start_x := box.pos.x;
+    current_box := Box{{0, 0}, {box_width, box_height}};
+
+    font       := app.settings.font.font;
+    text_size  := app.settings.font.size;
+    spacing    := cast(f32) 1;
+    text_color := color_scheme.text;
 
     iter := Pool_Array.iter(app.ui.windows);
     for it in Pool_Array.next(&iter){
         x, y := id_to_xy(it.count - 1, self.width);
-        draw_box(current_box, color_scheme.background2);
-        draw_box_outline(current_box, 2, color_scheme.foreground1);
+        draw_box(ctx, current_box, color_scheme.background2);
+        draw_box_outline(ctx, current_box, 2, color_scheme.foreground1);
+
+        inner := remove_padding(current_box, 4);
+        wrap  := inner.size.x;
 
         w, _ := get_window(app, cast(Window_Id) it.id);
-        cstr := s.clone_to_cstring(w.title, app.fa);
-        size := measure_text(w.title, style, app.fa);
-        text_box := align_vertical(Box{{0, 0}, size}, current_box, .Center, .Center);
-        text_box = align_horizontal(text_box, current_box, .Center, .Center);
-        rl.DrawTextEx(style.font, cstr, text_box.pos, style.size, style.spacing, style.color);
+
+        text_box := measure_text(
+            ctx = ctx,
+            pos = {0, 0},
+            text = w.title,
+            size = text_size,
+            hspacing = spacing,
+            vspacing = spacing,
+            wrap = wrap,
+            font = font,
+        );
+            
+        text_ctx := ctx_from(ctx, inner);
+        inner.pos = {0, 0};
+        text_box  = align_vertical(text_box, inner, .Center, .Center);
+        text_box  = align_horizontal(text_box, inner, .Center, .Center);
+        draw_text(
+            ctx = text_ctx,
+            pos = text_box.pos,
+            text = w.title,
+            size = text_size,
+            hspacing = spacing,
+            vspacing = spacing,
+            wrap = wrap,
+            font = font,
+            color = text_color,
+        );
 
         if self.x == x && self.y == y{
             color := color_scheme.foreground1;
             color.a = 100;
-            draw_box(current_box, color);
+            draw_box(ctx, current_box, color);
         }
 
         current_box.pos.x += box_width + horizontal_spacing;
         if x + 1 == self.width{
-            current_box.pos.x = start_x;
+            current_box.pos.x = 0;
             current_box.pos.y += box_height + vertical_spacing;
         }
     }
@@ -190,4 +209,3 @@ get_current_window :: proc(self: ^Window_Select_Window, app: ^App) -> Window_Id{
 
 SELECT_CURRENT :: Key_Bind{Key{key = .ENTER}};
 CLOSE_CURRENT  :: Key_Bind{Key{key = .C}};
-

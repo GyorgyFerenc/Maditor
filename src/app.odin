@@ -21,6 +21,7 @@ App :: struct{
 
     settings: Settings,
     copy_buffer: [dynamic]rune,
+    draw_fps: bool,
 
     key_binds: struct{
         len: int,

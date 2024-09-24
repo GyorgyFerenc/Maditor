@@ -1,6 +1,8 @@
 package main
 
 import "core:c"
+import "core:math"
+
 
 v2  :: [2]f32;
 v2i :: [2]int;
@@ -21,5 +23,12 @@ v2i_to_v2 :: proc(v: v2i) -> v2{
 
 to_v2 :: proc{
     v2i_to_v2,
+}
+
+floor_v2 :: proc(p: v2) -> v2{
+    return {
+        math.floor(p.x),
+        math.floor(p.y),
+    }
 }
 

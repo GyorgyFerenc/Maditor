@@ -22,8 +22,9 @@ Settings :: struct{
         loaded: bool,
     },
 
-    tab_size: int,
-    autosave: bool,
+    tab_size:    int, // number of spaces
+    space_width: f32,
+    autosave:    bool,
 }
 
 init_settings :: proc(s: ^Settings, app: ^App){
@@ -34,6 +35,8 @@ init_settings :: proc(s: ^Settings, app: ^App){
 
     s.font.size = 25;
     s.font.path = "font/InconsolataNerdFont-Regular.ttf";
+    //s.font.path = "font/noto.ttf";
+
 
     s.tab_size = 4;
     s.autosave = true;
@@ -61,6 +64,7 @@ apply :: proc(s: ^Settings, app: ^App){
         0,
     );
     s.font.loaded = true;
+    s.space_width = measure_rune_draw_width(' ', size = s.font.size, font = s.font.font);
 }
 
 detect_window_size_change :: proc(app: ^App){
@@ -72,6 +76,13 @@ detect_window_size_change :: proc(app: ^App){
     if size.x != w || size.y != h{
         size.x = w;
         size.y = h;
+    }
+}
+
+window_box :: proc(s: Settings) -> Box{
+    return {
+        pos = {0, 0},
+        size = to_v2(s.window.size),
     }
 }
 
@@ -116,10 +127,11 @@ Color_Scheme :: struct{
     punctuation: rl.Color,
     procedure:   rl.Color,
     comment:     rl.Color,
+    namespace:   rl.Color,
 }
 
-//DEFAULT_COLOR_SCHEME  :: ONE_DARK_COLOR_SCHEME;
-DEFAULT_COLOR_SCHEME  :: CONTRAST_COLOR_SCHEME;
+DEFAULT_COLOR_SCHEME  :: ONE_DARK_COLOR_SCHEME;
+//DEFAULT_COLOR_SCHEME  :: CONTRAST_COLOR_SCHEME;
 
 
 CONTRAST_COLOR_SCHEME :: Color_Scheme{
@@ -163,6 +175,7 @@ CONTRAST_COLOR_SCHEME :: Color_Scheme{
     punctuation = rl.WHITE,
     procedure   = rl.BLUE,
     comment     = rl.GRAY,
+    namespace   = rl.YELLOW,
 
 }
 
@@ -217,5 +230,6 @@ ONE_DARK_COLOR_SCHEME :: Color_Scheme{
     punctuation = ONE_DARK_WHITE, 
     procedure   = ONE_DARK_BLUE,
     comment     = rl.GRAY,
+    namespace   = ONE_DARK_YELLOW,
 }
 

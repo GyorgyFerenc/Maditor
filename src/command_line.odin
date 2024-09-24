@@ -60,6 +60,7 @@ update_command_line :: proc(self: ^Command_Line, app: ^App){
 draw_command_line :: proc(self: ^Command_Line, app: ^App){
     if !self.active do return;
 
+
     s.write_rune(&self.builder, '_');
     defer s.pop_rune(&self.builder); 
 
@@ -70,51 +71,79 @@ draw_command_line :: proc(self: ^Command_Line, app: ^App){
         window_size / 10,
         window_size / 10 * 8,
     };
+
+    ctx := Draw_Context{ {{0, 0}, window_size} };
+
     text_outline :: 2;
     text_padding :: 2;
     help_box, input_line := remove_padding_side(box, app.settings.font.size + text_outline + text_padding, .Top);
 
-    draw_box(input_line, color_scheme.background1);
-    draw_box_outline(input_line, text_outline, color_scheme.foreground1);
+    draw_box(ctx, input_line, color_scheme.background1);
+    draw_box_outline(ctx, input_line, text_outline, color_scheme.foreground1);
+
     input_line = remove_padding(input_line, text_outline + text_padding);
-    cstr := s.to_cstring(&self.builder);
+    str := s.to_string(self.builder);
 
     font := app.settings.font;
-    style := Text_Style{
-        font = font.font,
-        size = font.size,
-        spacing = 1,
-        color = color_scheme.text,
-    };
-    draw_scrissored_text(cstr, input_line, style);
+    { // draw input line
+        ctx := Draw_Context{input_line};
+        input_line.pos = {0, 0}; // It became the origin
 
- 
+        text_box := measure_text(
+            ctx = ctx, 
+            pos = {0, 0},
+            text = str,
+            font = font.font,
+            size = font.size,
+            hspacing = 1,
+        );
+        text_box = align_vertical(text_box, input_line, .Center, .Center);
+        text_box = align_horizontal(text_box, input_line, .Left, .Left);
+        draw_text(
+            ctx = ctx,
+            pos = text_box.pos,
+            text = str,
+            font = font.font,
+            size = font.size,
+            hspacing = 1,
+            color = color_scheme.text,
+        );
+    }   
+
     if self.response != ""{
-        draw_box(help_box, color_scheme.background2);
-        draw_box_outline(help_box, 2, color_scheme.foreground1);
+        help_ctx := Draw_Context{help_box};
         inner := remove_padding(help_box, 4);
-        cstr = s.clone_to_cstring(self.response, app.fa);
-  
-        begin_box_draw_mode(inner);
-        rl.DrawTextEx(style.font, cstr, inner.pos, style.size, style.spacing, style.color);
-        defer end_box_draw_mode();
+        text_ctx := Draw_Context{inner};
+
+        wrap := inner.size.x;
+        text_box := measure_text(
+            ctx = text_ctx, 
+            pos = {0, 0},
+            text = self.response,
+            font = font.font,
+            size = font.size,
+            hspacing = 1,
+            vspacing = 1,
+            wrap = wrap
+        );
+
+        help_box.pos = {0, 0}; // It became the origin
+        help_box.size.y = text_box.size.y + 4;
+        draw_box(help_ctx, help_box, color_scheme.background2);
+        draw_box_outline(help_ctx, help_box, 2, color_scheme.foreground1);
+
+        draw_text(
+            ctx = text_ctx, 
+            pos = {0, 0},
+            text = self.response,
+            font = font.font,
+            size = font.size,
+            hspacing = 1,
+            vspacing = 1,
+            wrap = wrap,
+            color = color_scheme.text,
+        );
      } 
-   
-    draw_scrissored_text :: proc(cstr: cstring, box: Box, text_style: Text_Style){
-        text_size := rl.MeasureTextEx(text_style.font, cstr, text_style.size, text_style.spacing);
-
-        begin_box_draw_mode(box);
-        defer end_box_draw_mode();
-
-        text_pos := box.pos;
-        size := box.size;
-        text_pos.y += size.y / 2 - text_size.y / 2;
-        if text_size.x > size.x{
-            text_pos.x += size.x - text_size.x;
-        } 
-        rl.DrawTextEx(text_style.font, cstr, text_pos, text_style.size, text_style.spacing, text_style.color);
-
-    }
 }
 
 empty_response :: proc(self: ^Command_Line){

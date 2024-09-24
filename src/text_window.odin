@@ -3,6 +3,7 @@ package main
     Todo(Ferenc): Investigate problems when the buffer is empty
 */
 
+import "core:strconv"
 import "core:c"
 import "core:mem"
 import "core:fmt"
@@ -44,7 +45,6 @@ Text_Window :: struct{
     draw: struct{
         line_count: bool,
         status_line: bool,
-        text: Text_Style,
     },
     search: struct{
         pattern: string,
@@ -56,8 +56,9 @@ Text_Window :: struct{
 
 Text_Window_Color :: struct{
     color: rl.Color,
-    pos:   int,
+    pos:   int, // pos in binary
     len:   int,
+    i:     int,
 }
 
 init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
@@ -71,6 +72,7 @@ init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
     self.draw.line_count  = true;
     self.draw.status_line = true;
     self.undo = make([dynamic]Buffer.Buffer, app.gpa);
+
     sync_title(self);
 }
 
@@ -78,12 +80,6 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
     sync_title(self);
 
     color_scheme := app.settings.color_scheme;
-    self.draw.text = Text_Style{
-        font = app.settings.font.font,
-        size = app.settings.font.size,
-        spacing = 1,
-        color = color_scheme.text,
-    };
 
     if match_key_bind(app, BACK_TO_NORMAL){
         go_to_mode(self, .Normal);
@@ -123,7 +119,7 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
         if match_key_bind(app, CENTER_SCREEN){
             line  := Buffer.get_line_number(self.buffer, self.cursor);
-            pos_y := cast(f32) line * self.draw.text.size;
+            pos_y := cast(f32) line * self.app.settings.font.size;
             self.view_y = math.floor(pos_y - self.box.size.y / 2);
             if self.view_y < 0 do self.view_y = 0;
         }       
@@ -169,9 +165,8 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_REMOVE_RUNE){
-            // Todo(Ferenc): Fix this, add wrap to move_cursor
-            //move_cursor(self, .Right);
-            //Buffer.remove_rune_left(&self.buffer, self.cursor);
+            remove_range(self, self.cursor, 1);
+            move_cursor(self, .Right, true);
         }
         if match_key_bind(app, NORMAL_GO_TO_VISUAL){
             go_to_visual_mode(self);
@@ -180,7 +175,7 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             go_to_visual_mode(self, true);
         }
         if match_key_bind(app, NORMAL_PASTE){
-            insert_range(self, app.copy_buffer[:]);
+            paste(self);
         }
         if match_key_bind(app, NORMAL_UNDO){
             undo(self);
@@ -240,6 +235,30 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             change_line(self);
         }
 
+        if match_key_bind(app, NORMAL_COPY_WORLD_FORWARD){
+           copy_by_word(self, .Forward);
+        }       
+        if match_key_bind(app, NORMAL_COPY_WORLD_BACKWARD){
+           copy_by_word(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_COPY_WORLD_INSIDE_FORWARD){
+            copy_by_word_inside(self, .Forward);
+        }
+        if match_key_bind(app, NORMAL_COPY_WORLD_INSIDE_BACKWARD){
+            copy_by_word_inside(self, .Backward);
+        }
+        if match_key_bind(app, NORMAL_COPY_RIGHT){
+            copy_by_cursor(self, .Right);
+        }
+        if match_key_bind(app, NORMAL_COPY_LEFT){
+            copy_by_cursor(self, .Left);
+        }
+        if match_key_bind(app, NORMAL_COPY_UNTIL_END_LINE){
+            copy_until_end_line(self);
+        }
+        if match_key_bind(app, NORMAL_COPY_LINE){
+            copy_line(self);
+        }
     case .Insert:
         if match_key_bind(app, INSERT_REMOVE_RUNE) ||
            match_key_bind(app, INSERT_REMOVE_RUNE2) {
@@ -295,10 +314,16 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
 
         if match_key_bind(app, VISUAL_COPY){
-            clear(&app.copy_buffer);
-            for i in 0..<select_len{
-                append(&app.copy_buffer, Buffer.get_rune_i(self.buffer, start + i));
-            }
+            copy_range_i(self, start, select_len); 
+        }
+        if match_key_bind(app, VISUAL_CUT){
+            copy_range_i(self, start, select_len); 
+            remove_range(self, visual.start, select_len);
+        }
+        if match_key_bind(app, VISUAL_PASTE){
+            remove_range(self, visual.start, select_len);
+            move_cursor(self, .Right, true);
+            paste(self);
         }
 
     }
@@ -307,197 +332,215 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
 draw_text_window :: proc(self: ^Text_Window, app: ^App){
     defer clear(&self.colors);
 
-    slice.sort_by(self.colors[:], proc(a, b: Text_Window_Color) -> bool{
-        return a.pos < b.pos;
-    });    
+    color_scheme := self.app.settings.color_scheme;
+    font := self.app.settings.font;
+    settings := self.app.settings;
 
-    color_scheme := app.settings.color_scheme;
-    style := self.draw.text; 
-
-    big_text_box: Box = self.box;
+    box := self.box;
 
     if self.draw.status_line{
         status_line: Box;
-        big_text_box, status_line = remove_padding_side(self.box, 30, .Bottom);
-        draw_status_line(self, app, status_line, color_scheme.background3, style);
+        box, status_line = remove_padding_side(self.box, font.size + 5, .Bottom);
+        draw_status_line(self, status_line);
     }
 
-    line_count := Buffer.get_line_number_i(self.buffer, Buffer.length(self.buffer) - 1);
-    line_nr_len := style.size * 3;
+    ctx := Draw_Context{box};
+    begin_ctx(ctx);
+    defer end_ctx(ctx);
 
-    text_box := big_text_box;
+    nr_of_lines := Buffer.get_line_number_i(self.buffer, Buffer.length(self.buffer) - 1);
     line_box: Box;
     if self.draw.line_count{
-        text_box, line_box = remove_padding_side(big_text_box, cast(f32) line_nr_len, .Left);
-        draw_box(line_box, color_scheme.background2);
+        box, line_box = remove_padding_side(box, cast(f32) ((count_digits(nr_of_lines) / 4 + 1) * 4) * settings.space_width + 20, .Left);
     }
-    draw_box(text_box, color_scheme.background1);
 
-    begin_box_draw_mode(big_text_box);
-    defer end_box_draw_mode();
-
-    start_x :=  text_box.pos.x;
-    position := text_box.pos;
-
-    cursor_i := Buffer.get_pos(self.buffer, self.cursor);
-    line_count = 1;
     cursor_line := Buffer.get_line_number(self.buffer, self.cursor);
-    line_start := true;
+    cursor_up_pos   := cast(f32) (cursor_line - 1) * font.size;
+    cursor_down_pos := cast(f32) (cursor_line) * font.size;
+    
+    if cursor_up_pos <= self.view_y{
+        self.view_y = cursor_up_pos;
+    }
+    if cursor_down_pos > self.view_y + box.size.y{
+        self.view_y = cursor_down_pos - box.size.y;
+    }
+    line_count_ctx := Draw_Context{line_box};
+    text_ctx := Draw_Context{box};
+    fill(text_ctx, color_scheme.background1);
+    fill(line_count_ctx, color_scheme.background2);
+    feeder := Draw_Text_Feeder{
+        ctx  = text_ctx,
+        pos  = {0, -self.view_y},
+        font = font.font,
+        size = font.size,
+        hspacing = 1,
+        vspacing = 0,
+        color = color_scheme.text,
+    };
+    
+    color_idx := 0;    
+    text_byte_i := 0;
 
-    cursor_up_position   := cast(f32) cursor_line * style.size - style.size;
-    cursor_down_position := cast(f32) cursor_line * style.size + style.size;
-    if cursor_up_position <= self.view_y{
-        self.view_y = cursor_up_position;
-    }
-    if cursor_down_position > self.view_y + text_box.size.y{
-        self.view_y = cursor_down_position - text_box.size.y;
-    }
-    space_width := measure_rune_size(' ', style).x;
-    color_window := Text_Window_Color{rl.WHITE, 0, 0};
-    color_index := 0;
-    it := Buffer.iter(self.buffer);
-    for r, idx in Buffer.next(&it){
+    line_start := true;
+    iter := Buffer.iter(self.buffer);
+    for r, i in Buffer.next(&iter){
+        rune_pos := feeder.pos + feeder.rune_position;
+
         if self.draw.line_count && line_start{
             line_start = false;
-
-            // draw line count
-            builder := s.builder_make(app.fa);
-            defer s.builder_reset(&builder);
-            line_count_pos := v2{line_box.pos.x, position.y};
-            if line_count == cursor_line{
-                line_count_pos.x += 10;
-                s.write_int(&builder, line_count);
-            } else if line_count < cursor_line{
-                s.write_int(&builder, cursor_line - line_count);
-            } else {
-                s.write_int(&builder, line_count - cursor_line);
-            }
-            line_cstr := s.to_cstring(&builder);
-            rl.DrawTextEx(style.font, line_cstr, to_view_pos(self, line_count_pos), style.size, style.spacing, color_scheme.text);
+            buffer: [100]u8 = ---;
+            pos := v2{0, rune_pos.y};
+            number := cursor_line;
+            f_line := feeder.line + 1;
+            if f_line < cursor_line  do number = cursor_line - f_line;
+            if f_line > cursor_line  do number = f_line - cursor_line;
+            if f_line == cursor_line do pos.x += settings.space_width;
+            str := strconv.itoa(buffer[:], number);
+            draw_text(line_count_ctx, str,
+                pos = pos,
+                font = font.font,
+                size = font.size,
+                color = color_scheme.text,
+                hspacing = 1,
+            );            
         }
 
-        if color_index < len(self.colors){
-            if self.colors[color_index].pos == idx{
-                color_window = self.colors[color_index];
-                color_index += 1;
-            }
-            for color_index < len(self.colors) && self.colors[color_index].pos <= idx{
-                color_index += 1;
-            }
+        feeder.color = color_scheme.text;
+        
+        for color_idx < len(self.colors){
+            window := self.colors[color_idx];
+
+            if window.pos <= text_byte_i && text_byte_i < window.pos + window.len{
+                feeder.color = window.color;
+                break;
+            } 
+            if text_byte_i < window.pos do break;
+            color_idx += 1;
+        }
+        _, rune_size := utf8.encode_rune(r);
+        text_byte_i += rune_size;
+
+
+        feed_rune(&feeder, r);
+        width := feeder.rune_draw_width;
+        if r == '\n' do width = self.app.settings.space_width;
+        rune_box := Box{rune_pos, {width, font.size}};
+
+        if Buffer.get_pos(self.buffer, self.cursor) == i{
+            draw_cursor(self, text_ctx, rune_box);
         }
 
-        color := color_scheme.text;
-        if color_window.pos <= idx && idx < color_window.pos + color_window.len{
-            color = color_window.color;
-        }
-
-        size := measure_rune_size(r, style);
-        adjusted_pos := to_view_pos(self, position);
-        rune_box := Box{adjusted_pos, size};
-
-        if r == '\n'{
-            line_count += 1;
-            position.y += style.size;
-            position.x = start_x;
-            line_start = true;
-            rune_box.size = measure_rune_size('?', style);
-        } else if r == '\t'{
-            // Todo(Ferenc): Implement it 
-            //tab_stop_size := cast(f32) app.settings.tab_size * space_width + 
-            //                 cast(f32) (app.settings.tab_size - 1) * style.spacing;
-            //number_of_stops := cast(int) position.x / cast(int) tab_stop_size;
-            //new_x := start_x + cast(f32) number_of_stops * tab_stop_size;
-            //rune_box.size.x = new_x - position.x - style.spacing;
-            size := cast(f32) app.settings.tab_size * space_width + 
-                    cast(f32) (app.settings.tab_size - 1) * style.spacing;
-            rune_box.size.x = size - style.spacing;
-            position.x += size;
-        } else {
-            rl.DrawTextCodepoint(style.font, r, adjusted_pos , style.size, color);
-            position.x += size.x + style.spacing;
-        }
-
-        if cursor_i == idx{
-            color := color_scheme.white;
-            switch self.mode{
-            case .Normal: color = color_scheme.white;
-            case .Insert: color = color_scheme.green;
-            case .Visual: color = color_scheme.purple;
-            }
-            draw_cursor(rune_box, color);
-        }
-
+        if r == '\n' do line_start = true;
         if self.mode == .Visual{
-            start := Buffer.get_pos(self.buffer, self.visual.start);            
+            start := Buffer.get_pos(self.buffer, self.visual.start);
             end   := Buffer.get_pos(self.buffer, self.visual.end);
-            b, _  := add_margin_side(rune_box, style.spacing, .Right);
-            c := app.settings.color_scheme.foreground1;
-            c.a = 100;
-            if start <= idx && idx <= end{
-                draw_box(b, c);
+            color := color_scheme.foreground1;
+            color.a = 100;            
+            rune_box, _ = add_margin_side(rune_box, feeder.hspacing, .Left);
+            rune_box, _ = add_margin_side(rune_box, feeder.vspacing, .Top);
+            if start <= i && i <= end{
+                draw_box(text_ctx, rune_box, color);
             }
+
         }
     }
 
-    draw_cursor :: proc(box: Box, color1: rl.Color){
-        color1 := color1;
-        color1.a = 100;
-        draw_box(box, color1);
-        color1.a = 0xFF;
-        draw_box_outline(box, 1, color1);
+    draw_cursor :: proc(self: ^Text_Window, ctx: Draw_Context, box: Box){
+        color_scheme := self.app.settings.color_scheme;
+        color: rl.Color;
+        switch self.mode{
+        case .Normal: color = color_scheme.white;
+        case .Insert: color = color_scheme.green;
+        case .Visual: color = color_scheme.purple;
+        }
+        color.a = 100;
+        draw_box(ctx, box, color);
+        color.a = 0xFF;
+        draw_box_outline(ctx, box, 1, color);
     }
 
     to_view_pos :: proc(self: ^Text_Window, pos: v2) -> v2{
         return {pos.x, pos.y - self.view_y};
     }
 
-    draw_status_line :: proc(self: ^Text_Window, app: ^App, status_line: Box, background: rl.Color, style: Text_Style){
-        begin_box_draw_mode(status_line);
-        defer end_box_draw_mode();
+    draw_status_line :: proc(self: ^Text_Window, status_line: Box){
+        status_line := status_line;
+        color_scheme := self.app.settings.color_scheme;
+        font := self.app.settings.font;
 
-        draw_box(status_line, background);
+        ctx := Draw_Context{status_line};
+        begin_ctx(ctx);
+        defer end_ctx(ctx);
 
-        text: cstring = "";
+        status_line.pos = {0, 0};        
+        fill(ctx, color_scheme.background3);
+
+        text: string = "";
         switch self.mode{
         case .Normal: text = "NORMAL";
         case .Insert: text = "INSERT";
         case .Visual: text = "VISUAL";
         }
-
-        // Todo(Ferenc): align vertical center
         
-        size := measure_text(cast(string) text, style, app.fa);
-        rl.DrawTextEx(style.font, text, status_line.pos, style.size, style.spacing, style.color);
+        text_box := measure_text(
+            ctx = ctx,
+            text = text,
+            pos = {0, 0},
+            size = font.size,
+            font = font.font,
+            hspacing = 1,
+        );
+        text_box = align_vertical(text_box, status_line, .Center, .Center);
+        draw_text(
+            ctx = ctx,
+            text = text,
+            pos = text_box.pos,
+            size = font.size,
+            font = font.font,
+            color = color_scheme.text,
+        );
         
-        status_line, _ := remove_padding_side(status_line, size.x + 10, .Left);
-        cstr := s.clone_to_cstring(self.title, app.fa);
-        rl.DrawTextEx(style.font, cstr, status_line.pos, style.size, style.spacing, style.color);
-        size = measure_text(self.title, style, app.fa);
-        box, _ := remove_padding_side(status_line, size.x + 10, .Left);
-        box.size = status_line.size.yy / 2;
+        text_box.pos.x += text_box.size.x + 2;
+        draw_text(
+            ctx = ctx,
+            text = self.title,
+            pos = text_box.pos,
+            size = font.size,
+            font = font.font,
+            color = color_scheme.text,
+        );
+    }
 
-        if self.buffer.dirty{
-            draw_box(box, app.settings.color_scheme.red);
-        } else {
-            draw_box(box, app.settings.color_scheme.green);
+    count_digits :: proc(n: int) -> int{
+        n := n;
+        count := 0;
+        for {
+            count += 1;
+            n /= 10;
+            if n == 0 do break;
         }
+        return count;
     }
 }
 
 insert_new_line_below :: proc(self: ^Text_Window) -> int{
     end := Buffer.find_line_end(self.buffer, self.cursor);
-    Buffer.insert_rune_i(&self.buffer, end, '\n');
+    insert_rune(self, end, '\n');
     return end;
 }
 
 insert_new_line_above :: proc(self: ^Text_Window) -> int{
     begin := Buffer.find_line_begin(self.buffer, self.cursor);
-    Buffer.insert_rune_i(&self.buffer, begin, '\n');
+    insert_rune(self, begin, '\n');
     return begin;
 }
 
+insert_rune :: proc(self: ^Text_Window, pos: int, r: rune){
+    insert_range(self, pos, {r}); 
+}
+
 Move_Cursor :: enum{Left, Right, Up, Down}
-move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor) -> bool{
+move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor, wrap := false) -> bool{
     cursor_pos := Buffer.get_pos(self.buffer, self.cursor);
     move_left  := direction == .Left;
     move_right := direction == .Right;
@@ -508,9 +551,15 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor) -> bool{
         new_pos := cursor_pos - 1;
         current := Buffer.get_rune_i(self.buffer, new_pos);
 
-        if current != 0 && current != '\n'{
+
+        if wrap {
             Buffer.set_pos(&self.buffer, self.cursor, new_pos);
             return cursor_pos != new_pos;
+        } else {
+            if current != 0 && current != '\n'{
+                Buffer.set_pos(&self.buffer, self.cursor, new_pos);
+                return cursor_pos != new_pos;
+            }
         }
     }
     if move_right{
@@ -518,9 +567,14 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor) -> bool{
         current := Buffer.get_rune_i(self.buffer, new_pos);
         left    := Buffer.get_rune_i(self.buffer, new_pos - 1);
 
-        if current != 0 && left != '\n'{
+        if wrap {
             Buffer.set_pos(&self.buffer, self.cursor, new_pos);
             return cursor_pos != new_pos;
+        } else {
+            if current != 0 && left != '\n'{
+                Buffer.set_pos(&self.buffer, self.cursor, new_pos);
+                return cursor_pos != new_pos;
+            }
         }
     }
     if move_up || move_down{
@@ -546,8 +600,6 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor) -> bool{
 
     return false;
 }
-
-
 
 destroy_text_window :: proc(self: ^Text_Window, app: ^App){
     Buffer.destroy(self.buffer);
@@ -785,8 +837,6 @@ change_by :: proc(self: ^Text_Window, move_proc: proc(^Text_Window)){
     go_to_insert_mode(self);
 }
 
-
-
 change_by_word :: proc(self: ^Text_Window, dir: Condition_Move){
     delete_by_word(self, dir);
     go_to_insert_mode(self);
@@ -804,6 +854,7 @@ change_by_cursor :: proc(self: ^Text_Window, dir: Move_Cursor){
 
 change_until_end_line :: proc(self: ^Text_Window){
     delete_until_end_line(self);
+    move_cursor(self, .Right, true);
     go_to_insert_mode(self);
 }
 
@@ -812,14 +863,26 @@ change_line :: proc(self: ^Text_Window){
     go_to_insert_mode(self);
 }
 
-
-insert_range :: proc(self: ^Text_Window, array: []rune){
+insert_range_cursor :: proc(self: ^Text_Window, array: []rune){
     old_buffer := Buffer.clone(self.buffer, self.app.gpa);
     defer Buffer.destroy(old_buffer);
 
     for r in array{
         Buffer.insert_rune(&self.buffer, self.cursor, r);
     }
+    if !Buffer.text_equal(old_buffer, self.buffer){
+        push_undo(self, old_buffer); // Todo(Ferenc): make a push which does not copies for speed
+    }
+}
+
+insert_range :: proc(self: ^Text_Window, pos: int, array: []rune){
+    old_buffer := Buffer.clone(self.buffer, self.app.gpa);
+    defer Buffer.destroy(old_buffer);
+
+    for r, idx in array{
+        Buffer.insert_rune_i(&self.buffer, pos + idx, r);
+    }
+
     if !Buffer.text_equal(old_buffer, self.buffer){
         push_undo(self, old_buffer); // Todo(Ferenc): make a push which does not copies for speed
     }
@@ -835,7 +898,75 @@ sync_title :: proc(self: ^Text_Window){
 }
 
 add_color :: proc(self: ^Text_Window, color: Text_Window_Color){
+    color := color;
+    color.i = len(self.colors);
     append(&self.colors, color);
+}
+
+copy_range_i :: proc(self: ^Text_Window, start, len: int){
+    clear(&self.app.copy_buffer);
+    for i in 0..<len{
+        append(&self.app.copy_buffer, Buffer.get_rune_i(self.buffer, start + i));
+    }
+}
+
+copy_between_positions :: proc(self: ^Text_Window, p1, p2: int){
+    if p1 < p2{
+        len := p2 - p1;
+        copy_range_i(self, p1, len);
+    } else {
+        len := p1 - p2;
+        copy_range_i(self, p2, len);
+    }
+}
+
+copy_by_word :: proc(self: ^Text_Window, dir: Condition_Move){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor_by_word(self, dir);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    Buffer.set_pos(&self.buffer, self.cursor, pos);
+    copy_between_positions(self, pos, new_pos);
+}
+
+
+copy_by_word_inside :: proc(self: ^Text_Window, dir: Condition_Move){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor_by_word_inside(self, dir);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    Buffer.set_pos(&self.buffer, self.cursor, pos);
+    copy_between_positions(self, pos, new_pos);
+}
+
+copy_by_cursor :: proc(self: ^Text_Window, direction: Move_Cursor){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_cursor(self, direction);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    Buffer.set_pos(&self.buffer, self.cursor, pos);
+    copy_between_positions(self, pos, new_pos);
+}
+
+copy_by :: proc(self: ^Text_Window, move_proc: proc(^Text_Window)){
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    move_proc(self);
+    new_pos := Buffer.get_pos(self.buffer, self.cursor);
+    Buffer.set_pos(&self.buffer, self.cursor, pos);
+    copy_between_positions(self, pos, new_pos);
+}
+
+copy_until_end_line :: proc(self: ^Text_Window){
+    copy_between_positions(self, 
+        Buffer.get_pos(self.buffer, self.cursor),
+        Buffer.find_line_end(self.buffer, self.cursor));
+}
+
+copy_line :: proc(self: ^Text_Window){
+    copy_between_positions(self, 
+        Buffer.find_line_begin(self.buffer, self.cursor),
+        Buffer.find_line_end(self.buffer, self.cursor) + 1);
+}
+
+paste :: proc(self: ^Text_Window){
+    insert_range_cursor(self, self.app.copy_buffer[:]);
 }
 
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
@@ -885,6 +1016,15 @@ NORMAL_CHANGE_LEFT                  :: Key_Bind{Key{key = .C}, {key = .H}};
 NORMAL_CHANGE_UNTIL_END_LINE        :: Key_Bind{Key{key = .C, shift = true}};
 NORMAL_CHANGE_LINE                  :: Key_Bind{Key{key = .C}, {key = .C}};
 
+NORMAL_COPY_WORLD_FORWARD         :: Key_Bind{Key{key = .Y}, {key = .W}};
+NORMAL_COPY_WORLD_BACKWARD        :: Key_Bind{Key{key = .Y}, {key = .B}};
+NORMAL_COPY_WORLD_INSIDE_FORWARD  :: Key_Bind{Key{key = .Y}, {key = .W, shift = true}};
+NORMAL_COPY_WORLD_INSIDE_BACKWARD :: Key_Bind{Key{key = .Y}, {key = .B, shift = true}};
+NORMAL_COPY_RIGHT                 :: Key_Bind{Key{key = .Y}, {key = .L}};
+NORMAL_COPY_LEFT                  :: Key_Bind{Key{key = .Y}, {key = .H}};
+NORMAL_COPY_UNTIL_END_LINE        :: Key_Bind{Key{key = .Y, shift = true}};
+NORMAL_COPY_LINE                  :: Key_Bind{Key{key = .Y}, {key = .Y}};
+
 INSERT_REMOVE_RUNE  :: Key_Bind{Key{key = .BACKSPACE}};
 INSERT_REMOVE_RUNE2 :: Key_Bind{Key{key = .BACKSPACE, shift = true}};
 INSERT_NEW_LINE     :: Key_Bind{Key{key = .ENTER}};
@@ -892,6 +1032,8 @@ INSERT_TAB          :: Key_Bind{Key{key = .TAB}};
 
 VISUAL_DELETE :: Key_Bind{Key{key = .D}};
 VISUAL_COPY   :: Key_Bind{Key{key = .Y}};
+VISUAL_CUT    :: Key_Bind{Key{key = .X}};
 VISUAL_CHANGE :: Key_Bind{Key{key = .C}};
+VISUAL_PASTE  :: Key_Bind{Key{key = .P}};
 
 BACK_TO_NORMAL :: Key_Bind{Key{key = .C, ctrl = true}};
