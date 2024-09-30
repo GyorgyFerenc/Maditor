@@ -1,6 +1,7 @@
 package main
 
 import "core:c"
+import "core:fmt"
 import "core:mem"
 import "core:math"
 import "core:unicode/utf8"
@@ -331,7 +332,9 @@ feed_rune :: proc(self: ^Draw_Text_Feeder, r: rune){
             self.rune_position.x = 0;
             self.rune_position.y += self.size + self.vspacing;
         } else {
-            self.rune_position.x = a * self.tab_size;
+            new_pos := a * self.tab_size;
+            self.rune_draw_width = new_pos - self.rune_position.x;
+            self.rune_position.x = new_pos;
         }
     } else {
         if has_wrap && self.rune_position.x + self.rune_draw_width > w{

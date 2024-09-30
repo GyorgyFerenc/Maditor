@@ -318,6 +318,13 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
         }
         tw := cast(^Text_Window) window.data;
         start_search(tw, pattern);
+    case "fps":        
+        boolean, ok := get_atomic(sexpr, 1, p.Boolean);
+        if !ok{
+            app.draw_fps = !app.draw_fps;
+            return;
+        }
+        app.draw_fps = boolean;
     case:
         set_response(self, "Unkown command");
     }

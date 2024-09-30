@@ -95,7 +95,18 @@ update :: proc(app: ^App){
 }
 
 show_default_screen :: proc(app: ^App){
-    rl.DrawText("Maditor is a simple editor for the mentally deranged\nPress ctrl+; for typing commands.", 0, 0, 20, rl.WHITE);
+    color_scheme := app.settings.color_scheme;
+    font := app.settings.font;
+    ctx := Draw_Context{{{0, 0}, to_v2(app.settings.window.size)}};
+    fill(ctx, color_scheme.background1);
+    draw_text(ctx,
+        text = "Maditor is a simple editor for the mentally deranged\nPress ctrl+; for typing commands.",
+        pos  = {0, 0},
+        font = font.font,
+        size = font.size,
+        hspacing = 1,
+        color = color_scheme.text,
+    );
 }
 
 global_key_binds :: proc(app: ^App){
@@ -190,15 +201,15 @@ poll_key :: proc() -> (Key, bool){
         super = rl.IsKeyDown(.LEFT_SUPER),
     };
 
-	if key.key == .KEY_NULL      do return {}, false;
-	if key.key == .LEFT_SHIFT    do return {}, false;
-	if key.key == .LEFT_CONTROL  do return {}, false;
-	if key.key == .LEFT_ALT      do return {}, false;
-	if key.key == .LEFT_SUPER    do return {}, false;
-	if key.key == .RIGHT_SHIFT   do return {}, false;
-	if key.key == .RIGHT_CONTROL do return {}, false;
-	if key.key == .RIGHT_ALT     do return {}, false;
-	if key.key == .RIGHT_SUPER   do return {}, false;
+    if key.key == .KEY_NULL     do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .LEFT_SHIFT   do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .LEFT_CONTROL do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .LEFT_ALT     do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .LEFT_SUPER   do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .RIGHT_SHIFT   do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .RIGHT_CONTROL do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .RIGHT_ALT     do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
+    if key.key == .RIGHT_SUPER   do return {}, false;	if key.key == .KEY_NULL      do return {}, false;
 
     return key, true;
 }

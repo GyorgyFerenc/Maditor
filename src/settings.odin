@@ -35,6 +35,7 @@ init_settings :: proc(s: ^Settings, app: ^App){
 
     s.font.size = 25;
     s.font.path = "font/InconsolataNerdFont-Regular.ttf";
+    //s.font.path = "font/Anonymous Pro.ttf";
     //s.font.path = "font/noto.ttf";
 
 

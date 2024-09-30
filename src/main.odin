@@ -26,7 +26,9 @@ main :: proc(){
     app: App;
     init(&app);
 
-    open_to_text_window("test.temp", &app);
+    when ODIN_DEBUG{
+        open_to_text_window("test.temp", &app);
+    }
 
     start := time.now();
     for app.running{

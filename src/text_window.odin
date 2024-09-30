@@ -77,6 +77,8 @@ init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
 }
 
 update_text_window :: proc(self: ^Text_Window, app: ^App){
+
+    settings := app.settings;
     sync_title(self);
 
     color_scheme := app.settings.color_scheme;
@@ -141,6 +143,20 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         if match_key_bind(app, FIND_BACKWARD){
             find_next(self, .Backward);
         }
+
+        if match_key_bind(app, MOVE_BY_TAB_FORWARD){
+            offset := tab_pos_offset_from_cursor(self);
+            for _ in 0..<offset{
+                move_cursor(self, .Right);
+            }
+        }
+        if match_key_bind(app, MOVE_BY_TAB_BACKWARD){
+            offset := tab_pos_offset_from_cursor(self);
+            for _ in 0..<offset{
+                move_cursor(self, .Left);
+            }
+        }
+
     }
 
     switch self.mode{
@@ -176,6 +192,9 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         }
         if match_key_bind(app, NORMAL_PASTE){
             paste(self);
+        }
+        if match_key_bind(app, NORMAL_PASTE_SYSTEM){
+            paste(self, true);
         }
         if match_key_bind(app, NORMAL_UNDO){
             undo(self);
@@ -268,7 +287,8 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             Buffer.insert_rune(&self.buffer, self.cursor, '\n');
         }
         if match_key_bind(app, INSERT_TAB){
-            for _ in 0..<app.settings.tab_size{
+            asd := tab_pos_offset_from_cursor(self);
+            for _ in 0..<asd{
                 Buffer.insert_rune(&self.buffer, self.cursor, ' ');
             }
         }
@@ -316,6 +336,9 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         if match_key_bind(app, VISUAL_COPY){
             copy_range_i(self, start, select_len); 
         }
+        if match_key_bind(app, VISUAL_COPY_SYSTEM){
+            copy_range_i(self, start, select_len, true); 
+        }
         if match_key_bind(app, VISUAL_CUT){
             copy_range_i(self, start, select_len); 
             remove_range(self, visual.start, select_len);
@@ -325,7 +348,11 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             move_cursor(self, .Right, true);
             paste(self);
         }
-
+        if match_key_bind(app, VISUAL_PASTE_SYSTEM){
+            remove_range(self, visual.start, select_len);
+            move_cursor(self, .Right, true);
+            paste(self, true);
+        }
     }
 }
 
@@ -376,6 +403,7 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
         hspacing = 1,
         vspacing = 0,
         color = color_scheme.text,
+        tab_size = cast(f32) settings.tab_size * settings.space_width,
     };
     
     color_idx := 0;    
@@ -903,10 +931,26 @@ add_color :: proc(self: ^Text_Window, color: Text_Window_Color){
     append(&self.colors, color);
 }
 
-copy_range_i :: proc(self: ^Text_Window, start, len: int){
+copy_range_i :: proc(self: ^Text_Window, start, len: int, system := false){
     clear(&self.app.copy_buffer);
-    for i in 0..<len{
-        append(&self.app.copy_buffer, Buffer.get_rune_i(self.buffer, start + i));
+    if system {
+        str := Buffer.to_string(self.buffer, self.app.fa);
+        start_byte_i := 0;
+        byte_len := 0;
+        count := 0;
+        for _, i in str{
+            defer count += 1;
+            if start == count do start_byte_i = i;
+            if start + len == count {
+                byte_len = i - start_byte_i;
+            }
+        }
+        asd := s.clone_to_cstring(str[start_byte_i:][:byte_len], self.app.fa);
+        rl.SetClipboardText(asd);
+    } else {
+        for i in 0..<len{
+            append(&self.app.copy_buffer, Buffer.get_rune_i(self.buffer, start + i));
+        }
     }
 }
 
@@ -965,8 +1009,27 @@ copy_line :: proc(self: ^Text_Window){
         Buffer.find_line_end(self.buffer, self.cursor) + 1);
 }
 
-paste :: proc(self: ^Text_Window){
-    insert_range_cursor(self, self.app.copy_buffer[:]);
+paste :: proc(self: ^Text_Window, system := false){
+    if system{
+        cstr := rl.GetClipboardText();
+        array := make([dynamic]rune, allocator = self.app.fa);
+        for r in cast(string) cstr{
+            append(&array, r);
+        }
+        insert_range_cursor(self, array[:]);
+    } else {
+        insert_range_cursor(self, self.app.copy_buffer[:]);
+    }
+}
+
+tab_pos_offset_from_cursor :: proc(self: ^Text_Window) -> int{
+    settings := self.app.settings;
+    pos := Buffer.get_pos(self.buffer, self.cursor);
+    line_pos := Buffer.find_line_begin(self.buffer, self.cursor);
+    pos_from_begin := pos - line_pos;
+    tab_pos := settings.tab_size * (pos_from_begin / settings.tab_size + 1);
+    offset := tab_pos - pos_from_begin;
+    return offset;
 }
 
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
@@ -979,6 +1042,8 @@ MOVE_WORD_FORWARD         :: Key_Bind{Key{key = .W}};
 MOVE_WORD_BACKWARD        :: Key_Bind{Key{key = .B}};
 MOVE_WORD_INSIDE_FORWARD  :: Key_Bind{Key{key = .W, shift = true}};
 MOVE_WORD_INSIDE_BACKWARD :: Key_Bind{Key{key = .B, shift = true}};
+MOVE_BY_TAB_FORWARD       :: Key_Bind{Key{key = .TAB}};
+MOVE_BY_TAB_BACKWARD      :: Key_Bind{Key{key = .TAB, shift = true}};
 CENTER_SCREEN             :: Key_Bind{Key{key = .Z}, Key{key = .Z}};
 GO_TO_BEGIN_LINE          :: Key_Bind{Key{key = .H, shift = true}};
 GO_TO_END_LINE            :: Key_Bind{Key{key = .L, shift = true}};
@@ -997,6 +1062,7 @@ NORMAL_GO_TO_INSERT_APPEND          :: Key_Bind{Key{key = .A}};
 NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW :: Key_Bind{Key{key = .O}};
 NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE  :: Key_Bind{Key{key = .O, shift = true}};
 NORMAL_PASTE                        :: Key_Bind{Key{key = .P}};
+NORMAL_PASTE_SYSTEM                 :: Key_Bind{{key = .SPACE}, {key = .P}};
 
 NORMAL_DELETE_WORLD_FORWARD         :: Key_Bind{Key{key = .D}, {key = .W}};
 NORMAL_DELETE_WORLD_BACKWARD        :: Key_Bind{Key{key = .D}, {key = .B}};
@@ -1011,7 +1077,7 @@ NORMAL_CHANGE_WORLD_FORWARD         :: Key_Bind{Key{key = .C}, {key = .W}};
 NORMAL_CHANGE_WORLD_BACKWARD        :: Key_Bind{Key{key = .C}, {key = .B}};
 NORMAL_CHANGE_WORLD_INSIDE_FORWARD  :: Key_Bind{Key{key = .C}, {key = .W, shift = true}};
 NORMAL_CHANGE_WORLD_INSIDE_BACKWARD :: Key_Bind{Key{key = .C}, {key = .B, shift = true}};
-NORMAL_CHANGE_RIGHT                 :: Key_Bind{Key{key = .C}, {key = .L}};
+NORMAL_CHANGE_RIGHT                :: Key_Bind{Key{key = .C}, {key = .L}};
 NORMAL_CHANGE_LEFT                  :: Key_Bind{Key{key = .C}, {key = .H}};
 NORMAL_CHANGE_UNTIL_END_LINE        :: Key_Bind{Key{key = .C, shift = true}};
 NORMAL_CHANGE_LINE                  :: Key_Bind{Key{key = .C}, {key = .C}};
@@ -1035,5 +1101,7 @@ VISUAL_COPY   :: Key_Bind{Key{key = .Y}};
 VISUAL_CUT    :: Key_Bind{Key{key = .X}};
 VISUAL_CHANGE :: Key_Bind{Key{key = .C}};
 VISUAL_PASTE  :: Key_Bind{Key{key = .P}};
+VISUAL_PASTE_SYSTEM :: Key_Bind{{key = .SPACE}, {key = .P}};
+VISUAL_COPY_SYSTEM  :: Key_Bind{{key = .SPACE}, {key = .Y}};
 
 BACK_TO_NORMAL :: Key_Bind{Key{key = .C, ctrl = true}};
