@@ -1,6 +1,7 @@
 package main
 
 import s "core:strings"
+import "core:strconv"
 import "core:mem"
 import "core:fmt"
 import "core:c"
@@ -72,7 +73,7 @@ draw_command_line :: proc(self: ^Command_Line, app: ^App){
         window_size / 10 * 8,
     };
 
-    ctx := Draw_Context{ {{0, 0}, window_size} };
+    ctx := Draw_Context{ box = {{0, 0}, window_size} };
 
     text_outline :: 2;
     text_padding :: 2;
@@ -86,7 +87,7 @@ draw_command_line :: proc(self: ^Command_Line, app: ^App){
 
     font := app.settings.font;
     { // draw input line
-        ctx := Draw_Context{input_line};
+        ctx := ctx_from(ctx, input_line);
         input_line.pos = {0, 0}; // It became the origin
 
         text_box := measure_text(
@@ -111,9 +112,9 @@ draw_command_line :: proc(self: ^Command_Line, app: ^App){
     }   
 
     if self.response != ""{
-        help_ctx := Draw_Context{help_box};
+        help_ctx := ctx_from(ctx, help_box);
         inner := remove_padding(help_box, 4);
-        text_ctx := Draw_Context{inner};
+        text_ctx := ctx_from(ctx, inner);
 
         wrap := inner.size.x;
         text_box := measure_text(
@@ -325,6 +326,23 @@ eval_command :: proc(self: ^Command_Line, app: ^App, text: string){
             return;
         }
         app.draw_fps = boolean;
+    case "count-runes":
+        window, ok := get_active_window(app);
+        if !ok {
+            set_response(self, "No active window");
+            return;
+        }
+
+        if window.kind != Text_Window{
+            set_response(self, "Active window is not text window");
+            return;
+        }
+        tw := cast(^Text_Window) window.data;
+
+        buffer: [100]u8;
+        str := strconv.itoa(buffer[:], Buffer.length(tw.buffer));
+        set_response(self, str);
+        
     case:
         set_response(self, "Unkown command");
     }

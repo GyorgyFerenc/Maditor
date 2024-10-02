@@ -176,8 +176,13 @@ align_horizontal :: proc(b: Box, to: Box, b_align: Horizontal_Align, to_align: H
     return result;
 }
 
+Camera :: struct{
+    pos: v2,
+}
+
 Draw_Context :: struct{
     box: Box,
+    camera: Camera,
 }
 
 begin_ctx :: proc(ctx: Draw_Context){
@@ -194,20 +199,23 @@ end_ctx :: proc(ctx: Draw_Context){
 }
 
 fill :: proc(ctx: Draw_Context, color: rl.Color){
-    draw_box(ctx, {{0, 0}, ctx.box.size}, color);
+    box := Box{ctx.camera.pos, ctx.box.size};
+    draw_box(ctx, box, color);
 }
 
 draw_box :: proc(ctx: Draw_Context, b: Box, color: rl.Color){
-    rl.DrawRectangleV(ctx.box.pos + b.pos, b.size, color);
+    rl.DrawRectangleV(ctx.box.pos - ctx.camera.pos + b.pos, b.size, color);
 }
 
 draw_box_outline :: proc(ctx: Draw_Context, b: Box, thickness: f32, color: rl.Color){
     b := b;
     b.pos += ctx.box.pos;
+    b.pos -= ctx.camera.pos;
     rl.DrawRectangleLinesEx(box_to_rl_rectangle(b), thickness, color);
 }
 
 measure_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos := v2{}) -> Box{
+// Todo(Ferenc): add camera
     info := rl.GetGlyphInfo(font, r);
     rect := rl.GetGlyphAtlasRec(font, r);
     ratio := size / cast(f32) font.baseSize;
@@ -221,12 +229,13 @@ measure_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos :
 }
 
 measure_rune_draw_width :: proc(r: rune, size: f32, font: rl.Font) -> f32{
-    m := measure_rune({}, r, size, font);
-    return m.size.x + m.pos.x;
+    ratio := size / cast(f32) font.baseSize;
+    info := rl.GetGlyphInfo(font, r);
+    return cast(f32) info.advanceX * ratio;
 }
 
 draw_rune :: proc(ctx: Draw_Context, r: rune, size: f32, font: rl.Font, pos: v2, color: rl.Color){
-    rl.DrawTextCodepoint(font, r, ctx.box.pos + pos, size, color);
+    rl.DrawTextCodepoint(font, r, ctx.box.pos - ctx.camera.pos + pos, size, color);
 }
 
 draw_text :: proc(
@@ -238,12 +247,11 @@ draw_text :: proc(
     color: rl.Color,
     hspacing: f32 = 0, 
     vspacing: f32 = 0, 
-    tab_size: f32 = 40,
+    tab_size: int = 4,
     wrap: Maybe(f32) = nil,
 ){
     feeder := Draw_Text_Feeder{
         ctx  = ctx,
-        text = text,
         font = font,
         size = size,
         pos  = floor_v2(pos),
@@ -267,12 +275,11 @@ measure_text :: proc(
     pos: v2, 
     hspacing: f32 = 0, 
     vspacing: f32 = 0, 
-    tab_size: f32 = 40,
+    tab_size: int = 4,
     wrap: Maybe(f32) = nil,
 ) -> Box{
     feeder := Draw_Text_Feeder{
         ctx  = ctx,
-        text = text,
         font = font,
         size = size,
         pos  = pos,
@@ -293,14 +300,13 @@ measure_text :: proc(
 
 Draw_Text_Feeder :: struct{
     ctx: Draw_Context, 
-    text: string, 
     font: rl.Font, 
     size: f32, 
     pos: v2, 
     color: rl.Color,
     hspacing: f32,
     vspacing: f32,
-    tab_size: f32,
+    tab_size: int,
     wrap: Maybe(f32),
     
     color_idx: int,
@@ -327,14 +333,16 @@ feed_rune :: proc(self: ^Draw_Text_Feeder, r: rune){
         self.rune_position.y += self.size + self.vspacing;
         self.rune_position.x = 0;
     }else if r == '\t'{
-        a := math.floor(self.rune_position.x / self.tab_size + 1);
-        if has_wrap && a * self.tab_size > w{
+        pixel_width := (measure_rune_draw_width(' ', self.size, self.font) + self.hspacing) * cast(f32) self.tab_size;
+        tab_stop_nr := math.floor(self.rune_position.x / pixel_width + 1);
+        tab_stop_pos := tab_stop_nr * pixel_width;
+        
+        if has_wrap && tab_stop_pos > w{
             self.rune_position.x = 0;
             self.rune_position.y += self.size + self.vspacing;
         } else {
-            new_pos := a * self.tab_size;
-            self.rune_draw_width = new_pos - self.rune_position.x;
-            self.rune_position.x = new_pos;
+            self.rune_draw_width = tab_stop_pos - self.rune_position.x;
+            self.rune_position.x = tab_stop_pos;
         }
     } else {
         if has_wrap && self.rune_position.x + self.rune_draw_width > w{
@@ -359,6 +367,7 @@ ctx_from :: proc(ctx: Draw_Context, box: Box) -> Draw_Context{
     b.pos += ctx.box.pos;
     return {
         box = b,
+        camera = ctx.camera,
     };
 }
 

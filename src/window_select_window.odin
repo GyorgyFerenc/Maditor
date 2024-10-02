@@ -109,7 +109,7 @@ draw_window_select :: proc(self: ^Window_Select_Window, app: ^App){
     if self.len == 0 do return;
 
     color_scheme := app.settings.color_scheme;
-    ctx := Draw_Context{self.box};
+    ctx := Draw_Context{box = self.box};
     fill(ctx, color_scheme.background1);
 
     box_width:   f32 = self.box.size.x / f32(self.width + 1);
@@ -161,6 +161,7 @@ draw_window_select :: proc(self: ^Window_Select_Window, app: ^App){
             color = text_color,
         );
 
+
         if self.x == x && self.y == y{
             color := color_scheme.foreground1;
             color.a = 100;
@@ -209,3 +210,4 @@ get_current_window :: proc(self: ^Window_Select_Window, app: ^App) -> Window_Id{
 
 SELECT_CURRENT :: Key_Bind{Key{key = .ENTER}};
 CLOSE_CURRENT  :: Key_Bind{Key{key = .C}};
+

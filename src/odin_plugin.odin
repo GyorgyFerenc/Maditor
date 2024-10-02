@@ -36,6 +36,8 @@ update_odin_plugin :: proc(self: ^Odin_Plugin, app: ^App){
     if !s.ends_with(path, ".odin") do return;
     text := Buffer.to_string(tw.buffer, self.app.fa);
 
+    
+
     tokenizer_window_coloring(self, tw, text, path);
 }
 

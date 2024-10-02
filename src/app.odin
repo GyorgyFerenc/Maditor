@@ -78,7 +78,6 @@ update :: proc(app: ^App){
     ui := &app.ui;
     update_command_line(&ui.cmd, app);
 
-    update_odin_plugin(&app.plugins.odin_plugin, app);
 
     window, ok := get_window(app, ui.active_window);
     if ok {
@@ -86,6 +85,9 @@ update :: proc(app: ^App){
         window.box.size = to_v2(app.settings.window.size);
 
         update_window(window, app);
+
+        update_odin_plugin(&app.plugins.odin_plugin, app);
+
         draw_window(window, app);
     } else {
         show_default_screen(app);
@@ -97,7 +99,7 @@ update :: proc(app: ^App){
 show_default_screen :: proc(app: ^App){
     color_scheme := app.settings.color_scheme;
     font := app.settings.font;
-    ctx := Draw_Context{{{0, 0}, to_v2(app.settings.window.size)}};
+    ctx := Draw_Context{box = {{0, 0}, to_v2(app.settings.window.size)}};
     fill(ctx, color_scheme.background1);
     draw_text(ctx,
         text = "Maditor is a simple editor for the mentally deranged\nPress ctrl+; for typing commands.",

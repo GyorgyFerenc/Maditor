@@ -297,7 +297,7 @@ get_position_of_line :: proc(b: Buffer, line_number: int) -> int{
 
     it := iter(b);
     for r, idx in next(&it){
-        if line_number == 0 do break;
+        if line_number <= 0 do break;
         if r == '\n' {
             line_number -= 1;
             pos = idx + 1;
@@ -318,6 +318,10 @@ Iter :: struct{
 
 iter :: proc(b: Buffer) -> Iter{
     return {b, 0};
+}
+
+seek :: proc(it: ^Iter, to: int){
+    it.pos = to;
 }
 
 next :: proc(it: ^Iter) -> (rune, int, bool){

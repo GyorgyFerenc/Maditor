@@ -31,7 +31,6 @@ Text_Window :: struct{
     cursor: Buffer.Pos_Id,
     colors: [dynamic]Text_Window_Color,
     mode: Text_Window_Mode,
-    view_y: f32,
     visual: struct{
         anchor: Buffer.Pos_Id,
         line: bool,
@@ -45,6 +44,7 @@ Text_Window :: struct{
     draw: struct{
         line_count: bool,
         status_line: bool,
+        camera: Camera,
     },
     search: struct{
         pattern: string,
@@ -122,8 +122,8 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
         if match_key_bind(app, CENTER_SCREEN){
             line  := Buffer.get_line_number(self.buffer, self.cursor);
             pos_y := cast(f32) line * self.app.settings.font.size;
-            self.view_y = math.floor(pos_y - self.box.size.y / 2);
-            if self.view_y < 0 do self.view_y = 0;
+            self.draw.camera.pos.y = math.floor(pos_y - self.box.size.y / 2);
+            if self.draw.camera.pos.y < 0 do self.draw.camera.pos.y = 0;
         }       
         if match_key_bind(app, GO_TO_BEGIN_LINE){
             Buffer.set_pos(&self.buffer, self.cursor, Buffer.find_line_begin(self.buffer, self.cursor));
@@ -371,7 +371,7 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
         draw_status_line(self, status_line);
     }
 
-    ctx := Draw_Context{box};
+    ctx := Draw_Context{box = box};
     begin_ctx(ctx);
     defer end_ctx(ctx);
 
@@ -385,25 +385,37 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
     cursor_up_pos   := cast(f32) (cursor_line - 1) * font.size;
     cursor_down_pos := cast(f32) (cursor_line) * font.size;
     
-    if cursor_up_pos <= self.view_y{
-        self.view_y = cursor_up_pos;
+    if cursor_up_pos <= self.draw.camera.pos.y{
+        self.draw.camera.pos.y = cursor_up_pos;
     }
-    if cursor_down_pos > self.view_y + box.size.y{
-        self.view_y = cursor_down_pos - box.size.y;
+    if cursor_down_pos > self.draw.camera.pos.y + box.size.y{
+        self.draw.camera.pos.y = cursor_down_pos - box.size.y;
     }
-    line_count_ctx := Draw_Context{line_box};
-    text_ctx := Draw_Context{box};
+
+    line_count_ctx := Draw_Context{box = line_box};
+    line_count_ctx.camera = self.draw.camera;
+
+    text_ctx := Draw_Context{box = box};
+    text_ctx.camera = self.draw.camera;
+
+    // calculate chunk
+    line_space := font.size + VSPACING;
+    line_seen_by_camera := cast(int) (self.draw.camera.pos.y / line_space) + 1;
+    start_rune_pos := Buffer.get_position_of_line(self.buffer, line_seen_by_camera);
+    start_draw_pos := cast(f32) (line_seen_by_camera - 1) * line_space;
+    nr_of_lines_seen := cast(int) (text_ctx.box.size.y / line_space + 1);
+
     fill(text_ctx, color_scheme.background1);
     fill(line_count_ctx, color_scheme.background2);
     feeder := Draw_Text_Feeder{
         ctx  = text_ctx,
-        pos  = {0, -self.view_y},
+        pos  = {0, start_draw_pos},
         font = font.font,
         size = font.size,
         hspacing = 1,
-        vspacing = 0,
+        vspacing = VSPACING,
         color = color_scheme.text,
-        tab_size = cast(f32) settings.tab_size * settings.space_width,
+        tab_size = settings.tab_size,
     };
     
     color_idx := 0;    
@@ -411,7 +423,33 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
 
     line_start := true;
     iter := Buffer.iter(self.buffer);
+    if start_rune_pos != 0 {
+        for r, i in Buffer.next(&iter){
+            for color_idx < len(self.colors){
+                window := self.colors[color_idx];
+
+                if window.pos <= text_byte_i && text_byte_i < window.pos + window.len{
+                    feeder.color = window.color;
+                    break;
+                } 
+                if text_byte_i < window.pos do break;
+                color_idx += 1;
+            }
+            _, rune_size := utf8.encode_rune(r);
+            text_byte_i += rune_size;
+            if color_idx >= len(self.colors) do break;
+
+            if !(i < start_rune_pos - 1) {
+                break;
+            }
+        }
+    }
+    
+    Buffer.seek(&iter, start_rune_pos);
+
     for r, i in Buffer.next(&iter){
+        if feeder.line > nr_of_lines_seen do break;
+
         rune_pos := feeder.pos + feeder.rune_position;
 
         if self.draw.line_count && line_start{
@@ -419,7 +457,7 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
             buffer: [100]u8 = ---;
             pos := v2{0, rune_pos.y};
             number := cursor_line;
-            f_line := feeder.line + 1;
+            f_line := line_seen_by_camera + feeder.line;
             if f_line < cursor_line  do number = cursor_line - f_line;
             if f_line > cursor_line  do number = f_line - cursor_line;
             if f_line == cursor_line do pos.x += settings.space_width;
@@ -487,16 +525,12 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
         draw_box_outline(ctx, box, 1, color);
     }
 
-    to_view_pos :: proc(self: ^Text_Window, pos: v2) -> v2{
-        return {pos.x, pos.y - self.view_y};
-    }
-
     draw_status_line :: proc(self: ^Text_Window, status_line: Box){
         status_line := status_line;
         color_scheme := self.app.settings.color_scheme;
         font := self.app.settings.font;
 
-        ctx := Draw_Context{status_line};
+        ctx := Draw_Context{box = status_line};
         begin_ctx(ctx);
         defer end_ctx(ctx);
 
@@ -972,7 +1006,6 @@ copy_by_word :: proc(self: ^Text_Window, dir: Condition_Move){
     copy_between_positions(self, pos, new_pos);
 }
 
-
 copy_by_word_inside :: proc(self: ^Text_Window, dir: Condition_Move){
     pos := Buffer.get_pos(self.buffer, self.cursor);
     move_cursor_by_word_inside(self, dir);
@@ -1077,7 +1110,7 @@ NORMAL_CHANGE_WORLD_FORWARD         :: Key_Bind{Key{key = .C}, {key = .W}};
 NORMAL_CHANGE_WORLD_BACKWARD        :: Key_Bind{Key{key = .C}, {key = .B}};
 NORMAL_CHANGE_WORLD_INSIDE_FORWARD  :: Key_Bind{Key{key = .C}, {key = .W, shift = true}};
 NORMAL_CHANGE_WORLD_INSIDE_BACKWARD :: Key_Bind{Key{key = .C}, {key = .B, shift = true}};
-NORMAL_CHANGE_RIGHT                :: Key_Bind{Key{key = .C}, {key = .L}};
+NORMAL_CHANGE_RIGHT                 :: Key_Bind{Key{key = .C}, {key = .L}};
 NORMAL_CHANGE_LEFT                  :: Key_Bind{Key{key = .C}, {key = .H}};
 NORMAL_CHANGE_UNTIL_END_LINE        :: Key_Bind{Key{key = .C, shift = true}};
 NORMAL_CHANGE_LINE                  :: Key_Bind{Key{key = .C}, {key = .C}};
@@ -1105,3 +1138,6 @@ VISUAL_PASTE_SYSTEM :: Key_Bind{{key = .SPACE}, {key = .P}};
 VISUAL_COPY_SYSTEM  :: Key_Bind{{key = .SPACE}, {key = .Y}};
 
 BACK_TO_NORMAL :: Key_Bind{Key{key = .C, ctrl = true}};
+
+VSPACING :: 0; // Todo(Ferenc): add to settings
+
