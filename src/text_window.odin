@@ -156,7 +156,6 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
                 move_cursor(self, .Left);
             }
         }
-
     }
 
     switch self.mode{

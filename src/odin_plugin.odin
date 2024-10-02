@@ -157,9 +157,11 @@ tokenizer_window_coloring :: proc(self: ^Odin_Plugin, tw: ^Text_Window, text: st
                 shift(&t1, &t2, &t3, &t4, &tokenizer);
                 add_color(tw, token_to_text_window_color(t1, color_scheme.namespace));
             }else if t1.kind == .Import && t2.kind == .String{
-                path := t2.text[1:][:len(t2.text) - 2];
-                import_path := find_id_from_import_path(path);
-                import_renames[import_path] = true;
+                if len(t2.text) > 2{
+                    path := t2.text[1:][:len(t2.text) - 2];
+                    import_path := find_id_from_import_path(path);
+                    import_renames[import_path] = true;
+                }
             }
         } else if t1.kind > .B_Operator_Begin && t1.kind < .B_Operator_End {
             add_color(tw, token_to_text_window_color(t1, color_scheme.operator));
