@@ -16,6 +16,7 @@ import "core:slice"
 import rl "vendor:raylib"
 
 import "src:Buffer"
+import "src:Operation_Stack"
 
 Text_Window_Mode :: enum{
     Normal,
@@ -38,9 +39,6 @@ Text_Window :: struct{
         start: Buffer.Pos_Id,
         end:   Buffer.Pos_Id,
     },
-    insert: struct{
-        old_buffer: Buffer.Buffer,
-    },
     draw: struct{
         line_count: bool,
         status_line: bool,
@@ -51,7 +49,8 @@ Text_Window :: struct{
         found_pos: int,
         found: bool,
     },
-    undo: [dynamic]Buffer.Buffer,
+    undo: Operation_Stack.Operation_Stack(Buffer.Buffer),
+    jump_list: Operation_Stack.Operation_Stack(int), // Maybe do Buffer.Pos_Id
 }
 
 Text_Window_Color :: struct{
@@ -71,13 +70,13 @@ init_text_window :: proc(self: ^Text_Window, buffer: Buffer.Buffer, app: ^App){
     self.visual.end    = Buffer.new_pos(&self.buffer);
     self.draw.line_count  = true;
     self.draw.status_line = true;
-    self.undo = make([dynamic]Buffer.Buffer, app.gpa);
+    self.undo      = Operation_Stack.create(Buffer.Buffer, app.gpa);
+    self.jump_list = Operation_Stack.create(int, app.gpa);
 
     sync_title(self);
 }
 
 update_text_window :: proc(self: ^Text_Window, app: ^App){
-
     settings := app.settings;
     sync_title(self);
 
@@ -102,9 +101,15 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             for _ in 0..<number{ move_cursor(self, .Down); }
         }
         if match_key_bind(app, PAGE_UP){
+            jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
+            defer jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
+
             for _ in 0..<30{ move_cursor(self, .Up); }
         }
         if match_key_bind(app, PAGE_DOWN){
+            jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
+            defer jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
+
             for _ in 0..<30{ move_cursor(self, .Down); }
         }
         if match_key_bind(app, MOVE_WORD_FORWARD, &number){
@@ -132,9 +137,15 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             Buffer.set_pos(&self.buffer, self.cursor, Buffer.find_line_end(self.buffer, self.cursor));
         }
         if match_key_bind(app, GO_TO_BEGIN_FILE){
+            jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
+            defer jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
+
             Buffer.set_pos(&self.buffer, self.cursor, 0);
         }
         if match_key_bind(app, GO_TO_END_FILE){
+            jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
+            defer jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
+
             Buffer.set_pos(&self.buffer, self.cursor, Buffer.length(self.buffer) - 1);
         }
         if match_key_bind(app, FIND_FORWARD){
@@ -155,6 +166,13 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             for _ in 0..<offset{
                 move_cursor(self, .Left);
             }
+        }
+
+        if match_key_bind(app, JUMP_BACK){
+            jump_list_back(self);
+        }
+        if match_key_bind(app, JUMP_FORWARD){
+            jump_list_forward(self);
         }
     }
 
@@ -199,8 +217,7 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             undo(self);
         }
         if match_key_bind(app, NORMAL_REDO){
-            // Todo(Ferenc): support it
-            //redo(self); 
+            redo(self); 
         }
 
         if match_key_bind(app, NORMAL_DELETE_WORLD_FORWARD){
@@ -700,7 +717,7 @@ go_to_mode :: proc(self: ^Text_Window, mode: Text_Window_Mode){
 go_to_insert_mode :: proc(self: ^Text_Window){
     go_to_mode(self, .Insert);
     discard_next_rune(self.app);
-    self.insert.old_buffer = Buffer.clone(self.buffer, self.app.gpa);
+    push_undo(self, self.buffer);
 }
 
 go_to_visual_mode :: proc(self: ^Text_Window, line := false){
@@ -714,10 +731,7 @@ leave_mode :: proc(self: ^Text_Window){
     case .Normal:
     case .Visual:
     case .Insert:
-        if !Buffer.text_equal(self.insert.old_buffer, self.buffer){
-            push_undo(self, self.insert.old_buffer);
-        }
-        Buffer.destroy(self.insert.old_buffer);
+        push_undo(self, self.buffer, true);
     }
 }
 
@@ -765,7 +779,9 @@ length_of_int :: proc(nr: int) -> int{
 }
 
 jump_to_line :: proc(self: ^Text_Window, line_number: int){
+    jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
     Buffer.set_pos(&self.buffer, self.cursor, Buffer.get_position_of_line(self.buffer, line_number));
+    jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
 }
 
 /*
@@ -782,6 +798,9 @@ start_search :: proc(self: ^Text_Window, pattern: string){
 }
 
 find_next :: proc(self: ^Text_Window, dir: enum{Forward, Backward} = .Forward){
+    jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor));
+    defer jump_list_push(self, Buffer.get_pos(self.buffer, self.cursor), true);
+
     search := &self.search;
     search.found = false;
     text := Buffer.to_string(self.buffer, self.app.fa);
@@ -830,16 +849,21 @@ remove_range_i :: proc(self: ^Text_Window, pos: int, len: int){
     Buffer.remove_range_i(&self.buffer, pos, len);  
 }
 
-push_undo :: proc(self: ^Text_Window, b: Buffer.Buffer){
-    append(&self.undo, Buffer.clone(b, self.app.gpa));
+push_undo :: proc(self: ^Text_Window, b: Buffer.Buffer, silent := false){
+    // Todo(Ferenc): This leaks because Operation_Stack.push removes and not destroy
+    if silent do Operation_Stack.silent_push(&self.undo, Buffer.clone(b, self.app.gpa));
+    else do Operation_Stack.push(&self.undo, Buffer.clone(b, self.app.gpa));
 }
 
 undo :: proc(self: ^Text_Window){
-    if len(self.undo) == 0 do return;
-    b := self.undo[len(self.undo) - 1];
-    pop(&self.undo);
+    b, ok := Operation_Stack.back(&self.undo);
+    if !ok do return;
+    self.buffer = Buffer.clone(b, self.app.gpa);
+}
 
-    Buffer.destroy(self.buffer);
+redo :: proc(self: ^Text_Window){
+    b, ok := Operation_Stack.forward(&self.undo);
+    if !ok do return;
     self.buffer = Buffer.clone(b, self.app.gpa);
 }
 
@@ -1064,6 +1088,22 @@ tab_pos_offset_from_cursor :: proc(self: ^Text_Window) -> int{
     return offset;
 }
 
+jump_list_push :: proc(self: ^Text_Window, pos: int, silent := false){
+    if silent do Operation_Stack.silent_push(&self.jump_list, pos);
+    else do      Operation_Stack.push(&self.jump_list, pos);
+}
+
+jump_list_back :: proc(self: ^Text_Window){
+    pos, ok := Operation_Stack.back(&self.jump_list);
+    if ok do Buffer.set_pos(&self.buffer, self.cursor, pos);
+}
+
+jump_list_forward :: proc(self: ^Text_Window){
+    pos, ok := Operation_Stack.forward(&self.jump_list);
+    if ok do Buffer.set_pos(&self.buffer, self.cursor, pos);
+}
+
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -1083,6 +1123,8 @@ GO_TO_BEGIN_FILE          :: Key_Bind{Key{key = .K, shift = true}};
 GO_TO_END_FILE            :: Key_Bind{Key{key = .J, shift = true}};
 FIND_FORWARD              :: Key_Bind{Key{key = .N}};
 FIND_BACKWARD             :: Key_Bind{Key{key = .N, shift = true}};
+JUMP_BACK                 :: Key_Bind{Key{key = .O, ctrl = true}};
+JUMP_FORWARD              :: Key_Bind{Key{key = .I, ctrl = true}};
 
 NORMAL_UNDO                         :: Key_Bind{Key{key = .U}};
 NORMAL_REDO                         :: Key_Bind{Key{key = .U, shift = true}};

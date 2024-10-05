@@ -14,7 +14,7 @@ import "src:v2"
 
 
 main :: proc(){
-    //playground(); return;
+    //{playground(); return;}
 
     context.allocator      = mem.panic_allocator();
     context.temp_allocator = mem.panic_allocator();
@@ -29,7 +29,7 @@ main :: proc(){
     init(&app);
 
     when ODIN_DEBUG{
-        //open_to_text_window("test.temp", &app);
+        open_to_text_window("test.temp", &app);
     }
 
     start := time.now();
@@ -76,6 +76,53 @@ test :: proc(app: ^App){
     fmt.println(" ");
 }
 
+import "src:Operation_Stack"
+
 playground :: proc(){
+    stack := Operation_Stack.create(int, context.allocator);
+
+    Operation_Stack.push(&stack, 1);
+    Operation_Stack.push(&stack, 2);
+    Operation_Stack.push(&stack, 3);
+
+    t, ok := Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+    
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.forward(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.forward(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.forward(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    Operation_Stack.push(&stack, 100);
+    Operation_Stack.push(&stack, 101);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
+    t, ok = Operation_Stack.back(&stack);
+    fmt.println(t, ok);
+
 }
 
