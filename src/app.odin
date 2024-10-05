@@ -39,6 +39,7 @@ App :: struct{
         window_select: Maybe(Window_Id),
 
         cmd: Command_Line,
+        harpoon: Harpoon,
     },
 
     plugins: struct{
@@ -67,6 +68,7 @@ init :: proc(app: ^App){
     reset_keybinds(app);
 
     init_command_line(&app.ui.cmd, app.gpa);
+    init_harpoon(&app.ui.harpoon, app);
     init_odin_plugin(&app.plugins.odin_plugin, app);
 }
 
@@ -77,7 +79,7 @@ update :: proc(app: ^App){
 
     ui := &app.ui;
     update_command_line(&ui.cmd, app);
-
+    update_harpoon(&app.ui.harpoon);
 
     window, ok := get_window(app, ui.active_window);
     if ok {
@@ -94,6 +96,7 @@ update :: proc(app: ^App){
     }
 
     draw_command_line(&ui.cmd, app);
+    draw_harpoon(&app.ui.harpoon);
 }
 
 show_default_screen :: proc(app: ^App){

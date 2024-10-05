@@ -43,6 +43,10 @@ set_active :: proc(id: Window_Id, app: ^App) {
     app.ui.active_window = id;
 }
 
+get_active :: proc(app: App) -> Window_Id{
+    return app.ui.active_window;
+}
+
 add_window :: proc(app: ^App, w: Window) -> Window_Id{
     w.id = Pool_Array.alloc(&app.ui.windows, w);
     return w.id;

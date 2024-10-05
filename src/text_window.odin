@@ -1,6 +1,7 @@
 package main
 /*
     Todo(Ferenc): Investigate problems when the buffer is empty
+    Todo(Ferenc): Investigate inserting the end of the file
 */
 
 import "core:strconv"
