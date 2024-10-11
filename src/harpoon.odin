@@ -16,12 +16,12 @@ init_harpoon :: proc(self: ^Harpoon, app: ^App){
     self.app = app;
 }
 
+
 update_harpoon :: proc(self: ^Harpoon){
     for key, i in SLOT_KEYS{
         add_to_slot := ADD_TO_SLOT;
         add_to_slot[len(add_to_slot) - 1] = key;
         if match_key_bind(self.app, add_to_slot){
-            fmt.println("asd");
             self.slots[i].active = true;
             self.slots[i].window = get_active(self.app^);
         }

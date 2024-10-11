@@ -37,6 +37,7 @@ App :: struct{
         windows: Pool_Array.Pool_Array(Window),
         active_window: Window_Id,
         window_select: Maybe(Window_Id),
+        file_explorer: Maybe(Window_Id),
 
         cmd: Command_Line,
         harpoon: Harpoon,
@@ -121,7 +122,9 @@ global_key_binds :: proc(app: ^App){
 }
 
 discard_next_rune :: proc(app: ^App){
-    app.key_binds.discard_rune = true;
+    when ODIN_OS == .Linux{
+        app.key_binds.discard_rune = true;
+    }
 }
 
 poll_rune :: proc(app: ^App) -> rune{

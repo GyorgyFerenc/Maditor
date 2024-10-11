@@ -602,6 +602,36 @@ draw_text_window :: proc(self: ^Text_Window, app: ^App){
     }
 }
 
+destroy_text_window :: proc(self: ^Text_Window, app: ^App){
+    Buffer.destroy(self.buffer);
+    free(self, app.gpa);
+    delete(self.colors);
+}
+
+text_window_to_window :: proc(self: ^Text_Window) -> Window{
+    return generic_to_window(self, update_text_window, draw_text_window, destroy_text_window);
+}
+
+empty_text_window :: proc(app: ^App) -> Window_Id{
+    tw := new(Text_Window, app.gpa);
+    init_text_window(tw, Buffer.create(app.gpa), app);
+    id := add_window(app, text_window_to_window(tw));
+    set_active(id, app);
+    return id;
+}
+
+open_to_text_window :: proc(path: string, app: ^App) -> (Window_Id, bool){
+    buffer, ok := Buffer.load(path, app.gpa, app.fa);
+    if !ok do return {}, false;
+
+    tw := new(Text_Window, app.gpa);
+    init_text_window(tw, buffer, app);
+    id := add_window(app, text_window_to_window(tw));
+    set_active(id, app);
+
+    return id, true;
+}
+
 insert_new_line_below :: proc(self: ^Text_Window) -> int{
     end := Buffer.find_line_end(self.buffer, self.cursor);
     insert_rune(self, end, '\n');
@@ -679,37 +709,6 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor, wrap := false) -
 
     return false;
 }
-
-destroy_text_window :: proc(self: ^Text_Window, app: ^App){
-    Buffer.destroy(self.buffer);
-    free(self, app.gpa);
-    delete(self.colors);
-}
-
-text_window_to_window :: proc(self: ^Text_Window) -> Window{
-    return generic_to_window(self, update_text_window, draw_text_window, destroy_text_window);
-}
-
-empty_text_window :: proc(app: ^App) -> Window_Id{
-    tw := new(Text_Window, app.gpa);
-    init_text_window(tw, Buffer.create(app.gpa), app);
-    id := add_window(app, text_window_to_window(tw));
-    set_active(id, app);
-    return id;
-}
-
-open_to_text_window :: proc(path: string, app: ^App) -> (Window_Id, bool){
-    buffer, ok := Buffer.load(path, app.gpa, app.fa);
-    if !ok do return {}, false;
-
-    tw := new(Text_Window, app.gpa);
-    init_text_window(tw, buffer, app);
-    id := add_window(app, text_window_to_window(tw));
-    set_active(id, app);
-
-    return id, true;
-}
-
 go_to_mode :: proc(self: ^Text_Window, mode: Text_Window_Mode){
     leave_mode(self);
     self.mode = mode;

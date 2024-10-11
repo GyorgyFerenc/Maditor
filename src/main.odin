@@ -79,50 +79,22 @@ test :: proc(app: ^App){
 import "src:Operation_Stack"
 
 playground :: proc(){
-    stack := Operation_Stack.create(int, context.allocator);
+    buffer: [1 * mem.Kilobyte]u8;
+    ba: mem.Buddy_Allocator;
+    align := 8;
+/*
+    mem.buddy_allocator_init(&ba, buffer[:], 1);
+    alloc := mem.buddy_allocator(&ba);
+    i := new(int, alloc);
+*/
+    ptr := raw_data(buffer[:]);
+    fmt.println(ptr);
 
-    Operation_Stack.push(&stack, 1);
-    Operation_Stack.push(&stack, 2);
-    Operation_Stack.push(&stack, 3);
+    asd := mem.align_forward(ptr, uintptr(32));
+    fmt.println(asd);
 
-    t, ok := Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-    
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.forward(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.forward(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.forward(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    Operation_Stack.push(&stack, 100);
-    Operation_Stack.push(&stack, 101);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
-
-    t, ok = Operation_Stack.back(&stack);
-    fmt.println(t, ok);
+    ptr = raw_data(buffer[1:]);
+    fmt.println(ptr);
 
 }
 
