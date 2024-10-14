@@ -1,5 +1,10 @@
 package main
 
+/*
+    Todo(Ferenc): Make sure that window sizes do not go under a threshold (e. g. 10% of screen-width).
+                  Incorporate a camera as well for proper watching.
+*/  
+
 import "core:math"
 import s "core:strings"
 

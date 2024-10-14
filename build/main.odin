@@ -75,17 +75,18 @@ parse_args :: proc() -> Args{
 
 build :: proc(args: Args){
     build := args.build;
+    compiled := false;
 
     switch build.mode{
     case .Debug:
-        run(`odin build src -collection:src=src -debug -out:main.exe`);
+        compiled = run(`odin build src -collection:src=src -debug -out:main.exe`) == 0;
     case .Release:
-        run(`odin build src -collection:src=src -o:speed -out:mad.exe`);
+        compiled = run(`odin build src -collection:src=src -o:speed -out:mad.exe`) == 0;
     case .Playground:
-        run(`odin build src -collection:src=src -debug -define:PLAYGROUND=true -out:main.exe`);
+        compiled = run(`odin build src -collection:src=src -debug -define:PLAYGROUND=true -out:main.exe`) == 0;
     }
 
-    if args.build.run{
+    if compiled && args.build.run{
         when ODIN_OS == .Windows {
             run(`.\main.exe`);
         } else when ODIN_OS == .Linux {
@@ -135,10 +136,10 @@ self_rebuild :: proc(){
     }
 }
 
-run :: proc(str: string){
+run :: proc(str: string) -> int{
     fmt.println("[Running]", str);
     cstr := strings.clone_to_cstring(str);
-    libc.system(cstr);
+    return cast(int) libc.system(cstr);
 }
 
 HELP :: \

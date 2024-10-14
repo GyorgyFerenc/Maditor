@@ -68,7 +68,7 @@ init :: proc(app: ^App){
 
     reset_keybinds(app);
 
-    init_command_line(&app.ui.cmd, app.gpa);
+    init_command_line(&app.ui.cmd, app.gpa, app);
     init_harpoon(&app.ui.harpoon, app);
     init_odin_plugin(&app.plugins.odin_plugin, app);
 }
@@ -119,6 +119,10 @@ global_key_binds :: proc(app: ^App){
     if match_key_bind(app, SELECT_WINDOW){
         open_window_select(app);
     }
+    if match_key_bind(app, FILE_EXPLORER){
+        open_file_explorer(app);
+    }
+
 }
 
 discard_next_rune :: proc(app: ^App){
@@ -225,3 +229,8 @@ poll_key :: proc() -> (Key, bool){
 Key_Bind :: []Key;
 
 SELECT_WINDOW :: Key_Bind{Key{key = .P, ctrl = true}};
+FILE_EXPLORER :: Key_Bind{Key{key = .T, ctrl = true}};
+
+
+
+

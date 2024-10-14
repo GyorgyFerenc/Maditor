@@ -17,16 +17,33 @@ Command_Line :: struct{
     active: bool,
     response: string,
     allocator: mem.Allocator,
+    app: ^App,
+
+    mode: enum{
+        Command,
+        Input,
+    },
+    input: struct{
+        state: Input_Mode_State,
+    },
 }
 
-init_command_line :: proc(self: ^Command_Line, allocator: mem.Allocator){
+Input_Mode_State :: enum{
+    Ongoing,
+    Ended,
+    Canceled,
+}
+
+init_command_line :: proc(self: ^Command_Line, allocator: mem.Allocator, app: ^App){
     self.builder = s.builder_make(allocator);
     self.allocator = allocator;
+    self.app = app;
 }
 
 update_command_line :: proc(self: ^Command_Line, app: ^App){
     if !self.active{
         if match_key_bind(app, TOGGLE_COMMAND_LINE){
+            self.mode = .Command;
             self.active = true;
             s.builder_reset(&self.builder);
             self.response = "";
@@ -36,6 +53,7 @@ update_command_line :: proc(self: ^Command_Line, app: ^App){
 
     if match_key_bind(app, CLOSE_COMMAND_LINE) || match_key_bind(app, TOGGLE_COMMAND_LINE){
         self.active = false;
+        self.input.state = .Canceled;
     }
 
     for {
@@ -45,10 +63,15 @@ update_command_line :: proc(self: ^Command_Line, app: ^App){
             s.pop_rune(&self.builder);
         }
         if match_key_bind(app, {{key = .ENTER}}){
-            defer s.builder_reset(&self.builder);
-
             text := s.to_string(self.builder);
-            eval_command(self, app, text);
+            switch self.mode{
+            case .Command: 
+                eval_command(self, app, text);
+                s.builder_reset(&self.builder);
+            case .Input:
+                self.active = false;
+                self.input.state = .Ended;
+            }
         }
 
         r := poll_rune(app);
@@ -363,5 +386,29 @@ get_atomic :: proc(sexpr: ^p.Sexpr, pos: int, $T: typeid) -> (value: T, ok: bool
     return atomic^.(T);
 }
 
+start_input_mode :: proc(self: ^Command_Line, text := ""){
+    self.mode = .Input;
+    self.input.state = .Ongoing;
+    self.active = true;
+    s.builder_reset(&self.builder);
+    discard_next_rune(self.app);    
+
+    for r in text{
+        s.write_rune(&self.builder, r);
+    }
+}
+
+
+input_mode_state :: proc(self: ^Command_Line, allocator: mem.Allocator, result: ^string) -> Input_Mode_State{
+    if self.input.state == .Ended{
+        result^ = s.clone(s.to_string(self.builder), allocator);
+    }
+    return self.input.state;
+}
+
 TOGGLE_COMMAND_LINE :: Key_Bind{Key{key = .SEMICOLON, ctrl = true}}
 CLOSE_COMMAND_LINE  :: Key_Bind{Key{key = .C, ctrl = true}}
+
+
+
+

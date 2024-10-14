@@ -10,7 +10,6 @@ import rl "vendor:raylib"
 
 import "src:Buffer"
 import "src:Pool_Array"
-import "src:v2"
 
 
 main :: proc(){
@@ -24,6 +23,7 @@ main :: proc(){
     rl.InitWindow(1080, 720, "Maditor");
     defer rl.CloseWindow();
     rl.SetExitKey(.KEY_NULL);
+    rl.SetTargetFPS(144);
 
     app: App;
     init(&app);

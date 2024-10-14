@@ -249,7 +249,7 @@ draw_text :: proc(
     vspacing: f32 = 0, 
     tab_size: int = 4,
     wrap: Maybe(f32) = nil,
-){
+) -> Box{
     feeder := Draw_Text_Feeder{
         ctx  = ctx,
         font = font,
@@ -265,6 +265,8 @@ draw_text :: proc(
     for r in text{
         feed_rune(&feeder, r);
     }
+
+    return feeder.bounding_box;
 }
 
 measure_text :: proc(
@@ -369,5 +371,18 @@ ctx_from :: proc(ctx: Draw_Context, box: Box) -> Draw_Context{
         box = b,
         camera = ctx.camera,
     };
+}
+
+draw_debug_text :: proc(ctx: Draw_Context, app: ^App, text: string, pos: v2){
+    settings := app.settings;
+    color_scheme := settings.color_scheme;
+    draw_text(
+        ctx   = ctx,
+        text  = text,
+        pos   = pos,
+        font  = settings.font.font,
+        size  = settings.font.size,
+        color = color_scheme.text,
+    );
 }
 
