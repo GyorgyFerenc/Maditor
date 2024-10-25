@@ -308,7 +308,7 @@ draw_file :: proc(ctx: Draw_Context, self: ^File_Explorer, file: File, pos: v2) 
         if file.dir.open{
             draw_rune(
                 ctx   = ctx, 
-                r     = '+', 
+                r     = '-', 
                 size  = icon_size,
                 pos   = pos, 
                 font  = font.font,
@@ -317,7 +317,7 @@ draw_file :: proc(ctx: Draw_Context, self: ^File_Explorer, file: File, pos: v2) 
         } else{
             draw_rune(
                 ctx   = ctx, 
-                r     = '-', 
+                r     = '+', 
                 size  = icon_size,
                 pos   = pos, 
                 font  = font.font,

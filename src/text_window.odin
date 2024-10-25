@@ -189,13 +189,21 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_GO_TO_INSERT_NEW_LINE_BELLOW){
+            tab_level := detect_tab_level_cursor(self);
             end := insert_new_line_below(self);
             Buffer.set_pos(&self.buffer, self.cursor, end + 1);
+            for _ in 0..<tab_level {
+                Buffer.insert_rune(&self.buffer, self.cursor, ' ');
+            }
             go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_GO_TO_INSERT_NEW_LINE_ABOVE){
+            tab_level := detect_tab_level_cursor(self);
             begin := insert_new_line_above(self);
             Buffer.set_pos(&self.buffer, self.cursor, begin);
+            for _ in 0..<tab_level {
+                Buffer.insert_rune(&self.buffer, self.cursor, ' ');
+            }
             go_to_insert_mode(self);
         }
         if match_key_bind(app, NORMAL_REMOVE_RUNE){
@@ -300,12 +308,31 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
            match_key_bind(app, INSERT_REMOVE_RUNE2) {
             Buffer.remove_rune_left(&self.buffer, self.cursor);
         }
+        if match_key_bind(app, INSERT_REMOVE_TAB){
+            offset := tab_pos_offset_from_cursor(self);
+            if settings.tab_size == offset{
+                for _ in 0..<settings.tab_size{
+                    Buffer.remove_rune_left(&self.buffer, self.cursor);
+                }
+            } else {
+                for _ in 0..<settings.tab_size - offset{
+                    Buffer.remove_rune_left(&self.buffer, self.cursor);
+                }
+            }
+        }
         if match_key_bind(app, INSERT_NEW_LINE){
+            tab_level := detect_tab_level_cursor(self);
+            Buffer.insert_rune(&self.buffer, self.cursor, '\n');
+            for _ in 0..<tab_level {
+                Buffer.insert_rune(&self.buffer, self.cursor, ' ');
+            }
+        }
+        if match_key_bind(app, INSERT_NEW_LINE_NO_INDENT){
             Buffer.insert_rune(&self.buffer, self.cursor, '\n');
         }
         if match_key_bind(app, INSERT_TAB){
-            asd := tab_pos_offset_from_cursor(self);
-            for _ in 0..<asd{
+            offset := tab_pos_offset_from_cursor(self);
+            for _ in 0..<offset{
                 Buffer.insert_rune(&self.buffer, self.cursor, ' ');
             }
         }
@@ -792,8 +819,8 @@ start_search :: proc(self: ^Text_Window, pattern: string){
     if search.pattern != ""{
         delete(search.pattern, self.app.gpa);
     }
-    search.pattern = s.clone(pattern, self.app.gpa);
-    search.found_pos = 0;
+    search.pattern   = s.clone(pattern, self.app.gpa);
+    search.found_pos = Buffer.get_pos(self.buffer, self.cursor);
     find_next(self);
 }
 
@@ -809,7 +836,7 @@ find_next :: proc(self: ^Text_Window, dir: enum{Forward, Backward} = .Forward){
 
     increment: int;
     switch dir{
-    case .Forward: increment = 1;
+    case .Forward:  increment = 1;
     case .Backward: increment = -1;
     }
 
@@ -1104,6 +1131,27 @@ jump_list_forward :: proc(self: ^Text_Window){
 }
 
 
+detect_tab_level_cursor :: proc(self: ^Text_Window) -> int{
+    return detect_tab_level_i(self, Buffer.get_pos(self.buffer, self.cursor));
+}
+
+detect_tab_level :: proc(self: ^Text_Window, p: Buffer.Pos_Id) -> int{
+    return detect_tab_level_i(self, Buffer.get_pos(self.buffer, p));
+}
+
+detect_tab_level_i :: proc(self: ^Text_Window, pos: int) -> int{
+    lb := Buffer.find_line_begin_i(self.buffer, pos);
+    le := Buffer.find_line_end_i(self.buffer, pos);
+    sum := 0;
+    for lb < le{
+        defer lb += 1;
+        if Buffer.get_rune_i(self.buffer, lb) != ' ' do break;
+        sum += 1;
+    }
+    return sum;
+}
+
+
 MOVE_LEFT                 :: Key_Bind{Key{key = .H}};
 MOVE_RIGHT                :: Key_Bind{Key{key = .L}};
 MOVE_UP                   :: Key_Bind{Key{key = .K}};
@@ -1165,10 +1213,12 @@ NORMAL_COPY_LEFT                  :: Key_Bind{Key{key = .Y}, {key = .H}};
 NORMAL_COPY_UNTIL_END_LINE        :: Key_Bind{Key{key = .Y, shift = true}};
 NORMAL_COPY_LINE                  :: Key_Bind{Key{key = .Y}, {key = .Y}};
 
-INSERT_REMOVE_RUNE  :: Key_Bind{Key{key = .BACKSPACE}};
-INSERT_REMOVE_RUNE2 :: Key_Bind{Key{key = .BACKSPACE, shift = true}};
-INSERT_NEW_LINE     :: Key_Bind{Key{key = .ENTER}};
-INSERT_TAB          :: Key_Bind{Key{key = .TAB}};
+INSERT_REMOVE_RUNE        :: Key_Bind{Key{key = .BACKSPACE}};
+INSERT_REMOVE_RUNE2       :: Key_Bind{Key{key = .BACKSPACE, shift = true}};
+INSERT_REMOVE_TAB         :: Key_Bind{Key{key = .TAB, shift = true}};
+INSERT_NEW_LINE           :: Key_Bind{Key{key = .ENTER}};
+INSERT_NEW_LINE_NO_INDENT :: Key_Bind{Key{key = .ENTER, shift = true}};
+INSERT_TAB                :: Key_Bind{Key{key = .TAB}};
 
 VISUAL_DELETE :: Key_Bind{Key{key = .D}};
 VISUAL_COPY   :: Key_Bind{Key{key = .Y}};

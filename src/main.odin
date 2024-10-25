@@ -13,7 +13,7 @@ import "src:Pool_Array"
 
 
 main :: proc(){
-    //{playground(); return;}
+    {fmt.println("Playground"); playground(); return;}
 
     context.allocator      = mem.panic_allocator();
     context.temp_allocator = mem.panic_allocator();
@@ -79,22 +79,36 @@ test :: proc(app: ^App){
 import "src:Operation_Stack"
 
 playground :: proc(){
-    buffer: [1 * mem.Kilobyte]u8;
-    ba: mem.Buddy_Allocator;
-    align := 8;
-/*
-    mem.buddy_allocator_init(&ba, buffer[:], 1);
-    alloc := mem.buddy_allocator(&ba);
-    i := new(int, alloc);
-*/
-    ptr := raw_data(buffer[:]);
-    fmt.println(ptr);
-
-    asd := mem.align_forward(ptr, uintptr(32));
-    fmt.println(asd);
-
-    ptr = raw_data(buffer[1:]);
-    fmt.println(ptr);
-
+    alloc := context.allocator;
+    t: mem.Tracking_Allocator;
+    mem.tracking_allocator_init(&t, alloc);
+    defer {
+        fmt.println(t.total_memory_allocated);
+        fmt.println(t.total_memory_freed);
+    };
+    
+    alloc = mem.tracking_allocator(&t);
+    
+    g := create_growth_allocator(alloc, 4 * mem.Kilobyte);
+    defer destroy_growth_allocator(g);
+    
+    a := growth_allocator(&g);
+    
+    asd := make([dynamic]int, allocator = a);
+    append(&asd, 12);
+    append(&asd, 12);
+    append(&asd, 12);
+    
+    for _ in 0..<10{
+    basd := make(map[string]int, allocator = a);
+    basd["kecske"] = 12;
+    basd["asd"] = 1243;
+    }
+    
+    //_ = make([]u8, 1 * mem.Kilobyte, allocator = a);
+    //_ = make([]u8, 2 * mem.Kilobyte, allocator = a);
 }
+
+
+
 

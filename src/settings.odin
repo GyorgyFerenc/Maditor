@@ -59,6 +59,7 @@ apply :: proc(s: ^Settings, app: ^App){
     if s.font.loaded{
         rl.UnloadFont(s.font.font);
     }
+
     s.font.font = rl.LoadFontEx(
         strings.clone_to_cstring(s.font.path, app.fa),
         cast(c.int) s.font.size,

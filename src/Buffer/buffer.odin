@@ -1,5 +1,9 @@
 package buffer
 
+/*
+    Todo(Ferenc): Needs a rewrite because Buffer assumes rune pos not byte pos
+*/
+
 import "core:mem"
 import "core:fmt"
 import "core:os"

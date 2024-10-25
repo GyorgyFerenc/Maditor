@@ -8,7 +8,6 @@ import s "core:strings"
 import "core:unicode/utf8"
 import "core:unicode"
 
-
 print :: proc(node: Node){
     switch n in node{
     case ^Atomic:
@@ -27,7 +26,6 @@ print :: proc(node: Node){
         fmt.print("nil");
     }
 }
-
 
 Boolean  :: bool;
 Integer  :: i64;
