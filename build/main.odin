@@ -81,7 +81,11 @@ build :: proc(args: Args){
     case .Debug:
         compiled = run(`odin build src -collection:src=src -debug -out:main.exe`) == 0;
     case .Release:
-        compiled = run(`odin build src -collection:src=src -o:speed -out:mad.exe`) == 0;
+        when ODIN_OS == .Windows{
+            compiled = run(`odin build src -collection:src=src -out:mad.exe`) == 0;
+        } else{
+            compiled = run(`odin build src -collection:src=src -o:speed -out:mad.exe`) == 0;
+        }
     case .Playground:
         compiled = run(`odin build src -collection:src=src -debug -define:PLAYGROUND=true -out:main.exe`) == 0;
     }

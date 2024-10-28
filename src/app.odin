@@ -122,7 +122,6 @@ global_key_binds :: proc(app: ^App){
     if match_key_bind(app, FILE_EXPLORER){
         open_file_explorer(app);
     }
-
 }
 
 discard_next_rune :: proc(app: ^App){

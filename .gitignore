@@ -2,6 +2,8 @@
 *.exe
 *.temp
 *.tmp
+*.obj
+*.pdb
 bin/**
 .vscode
 

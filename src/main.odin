@@ -13,7 +13,7 @@ import "src:Pool_Array"
 
 
 main :: proc(){
-    {fmt.println("Playground"); playground(); return;}
+    //{fmt.println("Playground"); playground(); return;}
 
     context.allocator      = mem.panic_allocator();
     context.temp_allocator = mem.panic_allocator();

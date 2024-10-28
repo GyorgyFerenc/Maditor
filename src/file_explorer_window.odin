@@ -42,6 +42,7 @@ open_file_explorer :: proc(app: ^App){
     set_active(id, app);
     app.ui.file_explorer = id;
     w.mode = .Normal;
+    
 }
 
 init_file_explorer :: proc(self: ^File_Explorer, app: ^App){
@@ -57,19 +58,21 @@ destroy_file_explorer :: proc(self: ^File_Explorer, app: ^App){
 }
 
 update_file_explorer :: proc(self: ^File_Explorer, app: ^App){
+    context.allocator = self.app.fa;
+    context.temp_allocator = self.app.fa;
+
+
     cur_dir := os.get_current_directory(self.app.fa);
     init_file(self, &self.dir, cur_dir, self.app.fa);
     sync_cursor(self);
 
     cmd := &app.ui.cmd;
     text: string;
-
-    context.allocator = self.app.fa;
-    context.temp_allocator = self.app.fa;
-
+    
     parent, ok := get_cursor_parent(self);
     cursor_dir := cur_dir;
     if ok do cursor_dir = parent.fullpath;
+    
 
     switch self.mode{
     case .Normal: update_normal(self);
@@ -202,6 +205,7 @@ update_normal :: proc(self: ^File_Explorer){
 }
 
 draw_file_explorer :: proc(self: ^File_Explorer, app: ^App){
+
     color_scheme := app.settings.color_scheme;
     ctx := Draw_Context{box = self.box};
     ctx.camera = self.camera;
