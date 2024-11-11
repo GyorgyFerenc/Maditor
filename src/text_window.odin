@@ -397,6 +397,36 @@ update_text_window :: proc(self: ^Text_Window, app: ^App){
             move_cursor(self, .Right, true);
             paste(self, true);
         }
+        if match_key_bind(app, VISUAL_INSERT_TAB){
+            start_line := Buffer.find_line_begin(self.buffer, self.visual.start);
+            end_line   := Buffer.find_line_begin(self.buffer, self.visual.end);
+            count := Buffer.get_line_number(self.buffer, self.visual.end) - 
+                     Buffer.get_line_number(self.buffer, self.visual.start) + 1;
+            pos := start_line;
+            
+            for _ in 0..<count{
+                for _ in 0..<settings.tab_size{
+                    Buffer.insert_rune_i(&self.buffer, pos, ' ');
+                }
+                pos = Buffer.find_line_end_i(self.buffer, pos) + 1;
+            }
+        }
+        if match_key_bind(app, VISUAL_REMOVE_TAB){
+            start_line := Buffer.find_line_begin(self.buffer, self.visual.start);
+            end_line   := Buffer.find_line_begin(self.buffer, self.visual.end);
+            count := Buffer.get_line_number(self.buffer, self.visual.end) - 
+                     Buffer.get_line_number(self.buffer, self.visual.start) + 1;
+            pos := start_line;
+            
+            for _ in 0..<count{
+                end_pos := Buffer.find_line_end_i(self.buffer, pos);
+                for _ in 0..<settings.tab_size{
+                    if Buffer.get_rune_i(self.buffer, pos) != ' ' do break;
+                    Buffer.remove_rune_i(&self.buffer, pos);
+                }
+                pos = Buffer.find_line_end_i(self.buffer, pos) + 1;
+            }
+        }
     }
 }
 
@@ -736,6 +766,7 @@ move_cursor :: proc(self: ^Text_Window, direction: Move_Cursor, wrap := false) -
 
     return false;
 }
+
 go_to_mode :: proc(self: ^Text_Window, mode: Text_Window_Mode){
     leave_mode(self);
     self.mode = mode;
@@ -1106,9 +1137,16 @@ paste :: proc(self: ^Text_Window, system := false){
 }
 
 tab_pos_offset_from_cursor :: proc(self: ^Text_Window) -> int{
+    return tab_pos_offset_from_pos(self, self.cursor);
+}
+
+tab_pos_offset_from_pos :: proc(self: ^Text_Window, p: Buffer.Pos_Id) -> int{
+    return tab_pos_offset_from_pos_i(self, Buffer.get_pos(self.buffer, p));
+}
+
+tab_pos_offset_from_pos_i :: proc(self: ^Text_Window, pos: int) -> int{
     settings := self.app.settings;
-    pos := Buffer.get_pos(self.buffer, self.cursor);
-    line_pos := Buffer.find_line_begin(self.buffer, self.cursor);
+    line_pos := Buffer.find_line_begin_i(self.buffer, pos);
     pos_from_begin := pos - line_pos;
     tab_pos := settings.tab_size * (pos_from_begin / settings.tab_size + 1);
     offset := tab_pos - pos_from_begin;
@@ -1220,11 +1258,13 @@ INSERT_NEW_LINE           :: Key_Bind{Key{key = .ENTER}};
 INSERT_NEW_LINE_NO_INDENT :: Key_Bind{Key{key = .ENTER, shift = true}};
 INSERT_TAB                :: Key_Bind{Key{key = .TAB}};
 
-VISUAL_DELETE :: Key_Bind{Key{key = .D}};
-VISUAL_COPY   :: Key_Bind{Key{key = .Y}};
-VISUAL_CUT    :: Key_Bind{Key{key = .X}};
-VISUAL_CHANGE :: Key_Bind{Key{key = .C}};
-VISUAL_PASTE  :: Key_Bind{Key{key = .P}};
+VISUAL_DELETE  :: Key_Bind{Key{key = .D}};
+VISUAL_COPY    :: Key_Bind{Key{key = .Y}};
+VISUAL_CUT     :: Key_Bind{Key{key = .X}};
+VISUAL_CHANGE  :: Key_Bind{Key{key = .C}};
+VISUAL_PASTE   :: Key_Bind{Key{key = .P}};
+VISUAL_INSERT_TAB   :: Key_Bind{Key{key = .PERIOD}};
+VISUAL_REMOVE_TAB   :: Key_Bind{Key{key = .PERIOD, shift = true}};
 VISUAL_PASTE_SYSTEM :: Key_Bind{{key = .SPACE}, {key = .P}};
 VISUAL_COPY_SYSTEM  :: Key_Bind{{key = .SPACE}, {key = .Y}};
 
